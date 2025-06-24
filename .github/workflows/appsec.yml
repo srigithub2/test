@@ -2,6 +2,9 @@ name: Generic AppSec
 
 on:
   pull_request:
+  
+permissions:
+  security-events: write
 
 jobs:
   generic-scan:
