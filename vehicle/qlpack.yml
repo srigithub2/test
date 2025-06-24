@@ -1,0 +1,7 @@
+name: srigithub2/vehicle-standards
+version: 0.1.0
+dependencies:
+  github/codeql-coding-standards/cpp-autosar: "*"
+  github/codeql-coding-standards/c-misra-2023: "*"
+library: false
+
