@@ -1,0 +1,15 @@
+name: Generic AppSec
+
+on:
+  pull_request:
+
+jobs:
+  generic-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "🔐 Generic AppSec placeholder"
+
+  vehicle-scan:
+    # For demo purposes, run only in THIS repo.
+    if: github.repository == 'srigithub2/test'
+    uses: ./.github/workflows/codeql-vehicle.yml
