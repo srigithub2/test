@@ -1,9 +1,9 @@
-name: "CodeQL Coding Standards - SELECTED RULES"
+name: "CodeQL Coding Standards – SELECTED RULES"
 
 on:
   pull_request:
     branches: [ "main", "master" ]
-    types: [opened, synchronize, reopened]
+    types: [ opened, synchronize, reopened ]
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
@@ -32,34 +32,30 @@ jobs:
       with:
         languages: cpp
 
-    - name: Locate and setup CodeQL CLI
+    - name: Locate CodeQL CLI
       run: |
-        CODEQL_PATH=$(find /opt/hostedtoolcache -name "codeql" -type f 2>/dev/null | head -1)
-        if [ -n "$CODEQL_PATH" ]; then
-          echo "Found CodeQL at: $CODEQL_PATH"
-          echo "$(dirname "$CODEQL_PATH")" >> "$GITHUB_PATH"
-          echo "CODEQL_CLI=$(dirname "$CODEQL_PATH")/codeql" >> "$GITHUB_ENV"
-        else
-          CODEQL_PATH=$(command -v codeql 2>/dev/null || find /usr -name "codeql" -type f 2>/dev/null | head -1)
-          if [ -n "$CODEQL_PATH" ]; then
-            echo "Found CodeQL at: $CODEQL_PATH"
-            echo "CODEQL_CLI=$CODEQL_PATH" >> "$GITHUB_ENV"
-          else
-            echo "CodeQL CLI not found"
-            exit 1
-          fi
-        fi
+        CODEQL_PATH=$(find /opt/hostedtoolcache -name codeql -type f 2>/dev/null | head -1)
+        echo "$(dirname "$CODEQL_PATH")" >> "$GITHUB_PATH"
+        echo "CODEQL_CLI=$CODEQL_PATH"   >> "$GITHUB_ENV"
 
-    - name: Install Coding Standards Dependencies
+    - name: Install Coding-Standards packs
       run: |
         cd codeql-coding-standards/cpp/common/src   && $CODEQL_CLI pack install && cd -
         cd codeql-coding-standards/cpp/cert/src     && $CODEQL_CLI pack install && cd -
 
+    # ─────────────────────────────────────────────────────────────
+    # first build a 1-line C++ file, *then* create database
+    # ─────────────────────────────────────────────────────────────
     - name: Create CodeQL Database
       run: |
-        $CODEQL_CLI database create coding-standards-db --language=cpp --command="echo int main() { return 0; } > main.cpp && g++ -c main.cpp"
+        cat <<'EOF' > main.cpp
+        int main() { return 0; }
+        EOF
+        g++ -c main.cpp                     # fast 1-file compile
+        $CODEQL_CLI database create coding-standards-db \
+          --language=cpp --command="g++ -c main.cpp"
 
-    - name: Run SELECTED CERT C++ Rules
+    - name: Run SELECTED CERT Rules
       run: |
         $CODEQL_CLI database analyze coding-standards-db \
           ./codeql-coding-standards/cpp/cert/src/rules/ERR51-CPP/HandleAllExceptions.ql \
@@ -68,7 +64,7 @@ jobs:
           --output=cert-results.sarif \
           --sarif-category=cert-cpp
 
-    - name: Upload CERT Results
+    - name: Upload SARIF
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: cert-results.sarif
