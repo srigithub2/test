@@ -80,9 +80,9 @@ jobs:
           languages: c-cpp
           config-file: pr-code/.github/codeql-config.yml
           packs: |
-            github/codeql-coding-standards/cpp/cert
-            github/codeql-coding-standards/cpp/autosar
-            github/codeql-coding-standards/c/misra
+            workflow-repo/codeql-coding-standards/cpp/cert/src
+            workflow-repo/codeql-coding-standards/cpp/autosar/src
+            workflow-repo/codeql-coding-standards/c/misra/src
 
       - name: Install coding-standards packs
         run: |
