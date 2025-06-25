@@ -1,4 +1,4 @@
-name: "CodeQL Coding Standards Analysis"
+name: "CodeQL C/C++ Coding Standards"
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   analyze:
-    name: Analyze
+    name: CodeQL Analysis
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -25,115 +25,84 @@ jobs:
         repository: github/codeql-coding-standards
         path: codeql-coding-standards
 
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: cpp
-        queries: security-and-quality
+    - name: Setup CodeQL CLI
+      uses: github/codeql-action/setup@v3
 
-    - name: Install CodeQL pack dependencies
+    - name: Install Coding Standards Dependencies
       run: |
-        # Install dependencies for each pack after CodeQL is initialized
-        echo "Installing common dependencies..."
         cd codeql-coding-standards/cpp/common/src && codeql pack install && cd ../../../../
-        
-        echo "Installing CERT dependencies..."
         cd codeql-coding-standards/cpp/cert/src && codeql pack install && cd ../../../../
-        
-        echo "Installing AUTOSAR dependencies..."
         cd codeql-coding-standards/cpp/autosar/src && codeql pack install && cd ../../../../
-        
-        # Verify pack installation
-        echo "Verifying installed packs..."
-        codeql pack ls
 
-    # Build C/C++ files
-    - name: Build C files
+    - name: Create CodeQL Database
       run: |
-        # Try to use make if Makefile exists, otherwise compile C files directly
         if [ -f "Makefile" ]; then
-          make
+          codeql database create codeql-db --language=cpp --command="make"
         else
-          # Compile all C files
-          find . -name "*.c" -exec gcc -c {} \;
+          codeql database create codeql-db --language=cpp --command="find . -name '*.c' -exec gcc -c {} \;"
         fi
 
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
-      with:
-        category: "/language:cpp"
-        upload: true
-
-    - name: Run Additional Coding Standards Analysis
+    - name: Run Built-in Security Analysis
       run: |
-        # Find the CodeQL database location
-        DB_PATH="/home/runner/work/_temp/codeql_databases/cpp"
-        
-        if [ -d "$DB_PATH" ]; then
-          echo "Running CERT C++ coding standards analysis..."
-          codeql database analyze "$DB_PATH" \
-            ./codeql-coding-standards/cpp/cert/src \
-            --format=sarif-latest \
-            --output=cert-results.sarif \
-            --sarif-add-baseline-file-info \
-            --sarif-category="cert-cpp" || echo "CERT analysis completed with warnings"
-            
-          echo "Running AUTOSAR C++ coding standards analysis..."
-          codeql database analyze "$DB_PATH" \
-            ./codeql-coding-standards/cpp/autosar/src \
-            --format=sarif-latest \
-            --output=autosar-results.sarif \
-            --sarif-add-baseline-file-info \
-            --sarif-category="autosar-cpp" || echo "AUTOSAR analysis completed with warnings"
-            
-          # Upload additional results to GitHub
-          if [ -f "cert-results.sarif" ]; then
-            echo "Uploading CERT results..."
-            codeql github upload-results \
-              --sarif=cert-results.sarif \
-              --repository="${{ github.repository }}" \
-              --ref="${{ github.ref }}" \
-              --commit="${{ github.sha }}" || echo "CERT upload completed"
-          fi
-          
-          if [ -f "autosar-results.sarif" ]; then
-            echo "Uploading AUTOSAR results..."
-            codeql github upload-results \
-              --sarif=autosar-results.sarif \
-              --repository="${{ github.repository }}" \
-              --ref="${{ github.ref }}" \
-              --commit="${{ github.sha }}" || echo "AUTOSAR upload completed"
-          fi
-        else
-          echo "CodeQL database not found at expected location"
-        fi
+        codeql database analyze codeql-db \
+          codeql/cpp-queries:codeql-suites/cpp-security-and-quality.qls \
+          --format=sarif-latest \
+          --output=builtin-results.sarif
 
-    # Add step to comment on PR with results summary
+    - name: Run CERT C++ Analysis
+      run: |
+        codeql database analyze codeql-db \
+          ./codeql-coding-standards/cpp/cert/src \
+          --format=sarif-latest \
+          --output=cert-results.sarif \
+          --sarif-category=cert-cpp
+
+    - name: Run AUTOSAR Analysis
+      run: |
+        codeql database analyze codeql-db \
+          ./codeql-coding-standards/cpp/autosar/src \
+          --format=sarif-latest \
+          --output=autosar-results.sarif \
+          --sarif-category=autosar-cpp
+
+    - name: Upload Results
+      run: |
+        # Upload built-in analysis
+        codeql github upload-results \
+          --sarif=builtin-results.sarif \
+          --repository="${{ github.repository }}" \
+          --ref="${{ github.ref }}" \
+          --commit="${{ github.sha }}"
+
+        # Upload CERT analysis
+        codeql github upload-results \
+          --sarif=cert-results.sarif \
+          --repository="${{ github.repository }}" \
+          --ref="${{ github.ref }}" \
+          --commit="${{ github.sha }}"
+
+        # Upload AUTOSAR analysis
+        codeql github upload-results \
+          --sarif=autosar-results.sarif \
+          --repository="${{ github.repository }}" \
+          --ref="${{ github.ref }}" \
+          --commit="${{ github.sha }}"
+
     - name: Comment PR
       if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
       with:
         script: |
-          const { data: checks } = await github.rest.checks.listForRef({
+          const message = "## CodeQL C/C++ Analysis Complete\n\n" +
+            "**Standards Applied**:\n" +
+            "- Built-in Security & Quality\n" +
+            "- CERT C++ Secure Coding\n" +
+            "- AUTOSAR C++ (Automotive)\n\n" +
+            "View results in the [Security tab](" + context.payload.repository.html_url + "/security/code-scanning).";
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            ref: context.sha,
+            body: message
           });
-          
-          const codeqlCheck = checks.check_runs.find(check => 
-            check.name.includes('CodeQL') || check.name.includes('analyze')
-          );
-          
-          if (codeqlCheck) {
-            const message = "## CodeQL Coding Standards Analysis\n\n" +
-              "**Status**: " + (codeqlCheck.conclusion || 'In Progress') + "\n" +
-              "**Language**: C/C++\n\n" +
-              "View detailed results in the [Security tab](" + context.payload.repository.html_url + "/security/code-scanning).";
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: message
-            });
-          }
