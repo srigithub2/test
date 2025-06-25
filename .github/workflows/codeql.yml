@@ -11,324 +11,171 @@ on:
 jobs:
   coding-standards:
     name: "Coding-Standards (CERT + AUTOSAR + MISRA-C)"
-    runs-on: ubuntu-latest             # Use GitHub-hosted runners
-    timeout-minutes: 60               # Reduced from 180
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       security-events: write
       actions: read
       contents: read
 
     steps:
-      # 1️⃣ Checkout this workflow repository
-      - name: "Checkout workflow repo"
-        uses: actions/checkout@v4
-        with:
-          path: workflow-repo
-          fetch-depth: 0
+    # ───────── Repo setup ─────────
+    - name: Checkout workflow repo
+      uses: actions/checkout@v4
+      with:
+        path: workflow-repo
+        fetch-depth: 0
 
-      # 2️⃣ Cache CodeQL Coding Standards
-      - name: "Cache CodeQL Coding Standards"
-        uses: actions/cache@v4
-        with:
-          path: workflow-repo/codeql-coding-standards
-          key: codeql-standards-${{ hashFiles('workflow-repo/codeql-coding-standards/**') }}
-          restore-keys: codeql-standards-
+    - name: Cache CodeQL Coding Standards
+      id: cache-standards
+      uses: actions/cache@v4
+      with:
+        path: workflow-repo/codeql-coding-standards
+        key: codeql-standards-${{ hashFiles('workflow-repo/codeql-coding-standards/**') }}
+        restore-keys: codeql-standards-
 
-      - name: "Checkout CodeQL Coding Standards"
-        if: steps.cache-standards.outputs.cache-hit != 'true'
-        uses: actions/checkout@v4
-        with:
-          repository: github/codeql-coding-standards
-          path: workflow-repo/codeql-coding-standards
-          fetch-depth: 1
+    - name: Checkout CodeQL Coding Standards
+      if: steps.cache-standards.outputs.cache-hit != 'true'
+      uses: actions/checkout@v4
+      with:
+        repository: github/codeql-coding-standards
+        path: workflow-repo/codeql-coding-standards
+        fetch-depth: 1
 
-      # 3️⃣ Clone PR source repo (if event is pull_request)
-      - name: "Clone PR source repo"
-        if: github.event_name == 'pull_request'
-        run: |
-          git clone --depth 1 "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
-          cd pr-code
-          git fetch origin "${{ github.event.pull_request.head.sha }}"
-          git checkout "${{ github.event.pull_request.head.sha }}"
+    # ───────── Clone source ─────────
+    - name: Clone PR source repo
+      if: github.event_name == 'pull_request'
+      run: |
+        git clone --depth 1 "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
+        cd pr-code
+        git fetch origin "${{ github.event.pull_request.head.sha }}"
+        git checkout "${{ github.event.pull_request.head.sha }}"
 
-      # 4️⃣ Fallback for push events
-      - name: "Fallback: use current repo (push)"
-        if: github.event_name != 'pull_request'
-        run: |
-          mkdir pr-code
-          rsync -a --exclude .git ./ pr-code/
+    - name: Fallback: use current repo (push)
+      if: github.event_name != 'pull_request'
+      run: |
+        mkdir pr-code
+        rsync -a --exclude .git ./ pr-code/
 
-      # 5️⃣ Build caching
-      - name: "Cache build artifacts"
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/ccache
-            pr-code/**/*.o
-          key: ${{ runner.os }}-build-${{ hashFiles('pr-code/**/*.c', 'pr-code/**/*.cpp', 'pr-code/**/*.h', 'pr-code/**/*.hpp') }}
-          restore-keys: |
-            ${{ runner.os }}-build-
+    # ───────── Build cache & ccache ─────────
+    - name: Cache build objects
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/ccache
+          pr-code/**/*.o
+        key: ${{ runner.os }}-build-${{ hashFiles('pr-code/**/*.c', 'pr-code/**/*.cpp', 'pr-code/**/*.h', 'pr-code/**/*.hpp') }}
+        restore-keys: ${{ runner.os }}-build-
 
-      # 6️⃣ Setup fast compilation
-      - name: "Setup ccache and parallel compilation"
-        run: |
-          # Install ccache
-          sudo apt-get update && sudo apt-get install -y ccache
-          echo "CC=ccache gcc" >> $GITHUB_ENV
-          echo "CXX=ccache g++" >> $GITHUB_ENV
-          ccache --set-config=max_size=1G
-          ccache --zero-stats
+    - name: Setup ccache
+      run: |
+        sudo apt-get update && sudo apt-get install -y ccache
+        echo "CC='ccache gcc'"  >> $GITHUB_ENV
+        echo "CXX='ccache g++'" >> $GITHUB_ENV
+        ccache --set-config=max_size=1G
+        ccache --zero-stats
 
-      # 7️⃣ CodeQL config
-      - name: "Write CodeQL config"
-        run: |
-          mkdir -p pr-code/.github
-          {
-            echo "paths-ignore:"
-            echo "  - third_party/**"
-            echo "  - generated/**"
-            echo "  - vendor/**"
-            echo "  - build/**"
-            echo "  - '**/test/**'"
-          } > pr-code/.github/codeql-config.yml
+    # ───────── CodeQL config & init ─────────
+    - name: Write CodeQL config
+      run: |
+        mkdir -p pr-code/.github
+        cat > pr-code/.github/codeql-config.yml <<'YML'
+        paths-ignore:
+          - third_party/**
+          - generated/**
+          - vendor/**
+          - build/**
+          - '**/test/**'
+        YML
 
-      # 8️⃣ Initialize CodeQL
-      - name: "Init CodeQL"
-        uses: github/codeql-action/init@v3
-        with:
-          languages: c-cpp
-          config-file: pr-code/.github/codeql-config.yml
+    - name: Init CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: c-cpp
+        config-file: pr-code/.github/codeql-config.yml
 
-      # 9️⃣ Locate CodeQL CLI
-      - name: "Locate CodeQL CLI"
-        run: |
-          CODEQL_CLI=$(which codeql || find /opt/hostedtoolcache -type f -name codeql | head -n 1)
-          echo "CODEQL_CLI=$CODEQL_CLI" >> "$GITHUB_ENV"
-          echo "Using CodeQL CLI at: $CODEQL_CLI"
+    - name: Locate CodeQL CLI
+      run: |
+        echo "CODEQL_CLI=$(which codeql)" >> "$GITHUB_ENV"
 
-      # 🔟 Install packs (cached)
-      - name: "Install coding-standards packs"
-        run: |
-          echo "Installing CodeQL packs..."
-          for dir in \
-            workflow-repo/codeql-coding-standards/cpp/common/src \
-            workflow-repo/codeql-coding-standards/cpp/cert/src \
-            workflow-repo/codeql-coding-standards/cpp/autosar/src \
-            workflow-repo/codeql-coding-standards/c/misra/src
-          do
-            if [ -d "$dir" ]; then
-              echo "Installing pack in: $dir"
-              cd "$dir"
-              $CODEQL_CLI pack install --verbose || echo "Pack install failed for $dir"
-              cd -
-            else
-              echo "Directory not found: $dir"
-            fi
+    # ───────── Install packs locally ─────────
+    - name: Install coding-standards packs
+      run: |
+        for dir in \
+          workflow-repo/codeql-coding-standards/cpp/common/src \
+          workflow-repo/codeql-coding-standards/cpp/cert/src \
+          workflow-repo/codeql-coding-standards/cpp/autosar/src \
+          workflow-repo/codeql-coding-standards/c/misra/src
+        do
+          echo "Installing $dir"
+          $CODEQL_CLI pack install "$dir"
+        done
+
+    # ───────── Smart incremental build ─────────
+    - name: Smart incremental build
+      id: build_step
+      working-directory: pr-code
+      env:
+        NPROC: ${{ steps.build_step.outputs.NPROC }}
+      run: |
+        NPROC=$(nproc)
+        echo "NPROC=$NPROC" >> $GITHUB_OUTPUT
+
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD" | grep -E '\.(c|cpp|cc|cxx|h|hpp|hxx)$' | head -100)
+        else
+          CHANGED=$(find . -maxdepth 2 -type f \( -name "*.cpp" -o -name "*.c" \) | head -100)
+        fi
+
+        if [ -z "$CHANGED" ]; then
+          echo 'int main(){return 0;}' > dummy.cpp
+          ccache g++ -c dummy.cpp
+          echo "BUILD_CMD=ccache g++ -c dummy.cpp" >> $GITHUB_ENV
+        else
+          for f in $CHANGED; do
+            [ -f "$f" ] && ccache g++ -c "$f" -std=c++17 -O0 || true
           done
-          echo "Pack installation completed"
+          echo "BUILD_CMD=ccache g++ -c $CHANGED -std=c++17 -O0" >> $GITHUB_ENV
+        fi
 
-      # 11️⃣ Smart incremental compilation
-      - name: "Smart incremental build"
-        working-directory: pr-code
-        run: |
-          NPROC=$(nproc)
-          
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="${{ github.event.pull_request.base.sha }}"
-            HEAD="${{ github.event.pull_request.head.sha }}"
-            
-            # Get changed C/C++ files (limit to 100 for performance)
-            CHANGED_FILES=$(git diff --name-only "$BASE" "$HEAD" | \
-              grep -E '\.(c|cpp|cc|cxx)
+    # ───────── Create database ─────────
+    - name: Create CodeQL database
+      working-directory: pr-code
+      run: |
+        $CODEQL_CLI database create coding-standards-db \
+          --language=c-cpp \
+          --command="${{ env.BUILD_CMD }}" \
+          --overwrite
 
-      # 12️⃣ Create CodeQL database
-      - name: "Create CodeQL database"
-        working-directory: pr-code
-        run: |
-          echo "Creating CodeQL database..."
-          echo "Current directory: $(pwd)"
-          echo "Files in directory:"
-          ls -la
-          
-          # Check if we have actual object files from compilation
-          if ls *.o 2>/dev/null; then
-            echo "Found object files, using build command: ${{ env.BUILD_CMD }}"
-            $CODEQL_CLI database create coding-standards-db \
-              --language=c-cpp \
-              --command="${{ env.BUILD_CMD }}" \
-              --overwrite \
-              --verbose
-          else
-            echo "No object files found, using source extraction"
-            $CODEQL_CLI database create coding-standards-db \
-              --language=c-cpp \
-              --source-root=. \
-              --overwrite \
-              --verbose
-          fi
-          
-          # Verify database was created
-          if [ -d "coding-standards-db" ]; then
-            echo "Database created successfully"
-            ls -la coding-standards-db/
-          else
-            echo "Database creation failed!"
-            exit 1
-          fi
+    # ───────── Analyze ─────────
+    - name: Analyze coding-standards packs
+      working-directory: pr-code
+      run: |
+        $CODEQL_CLI database analyze coding-standards-db \
+          ../workflow-repo/codeql-coding-standards/cpp/cert/src \
+          ../workflow-repo/codeql-coding-standards/cpp/autosar/src \
+          ../workflow-repo/codeql-coding-standards/c/misra/src \
+          --format=sarif-latest \
+          --output=cert-results.sarif \
+          --threads=$(nproc) \
+          --sarif-category=coding-standards
 
-      # 13️⃣ Analyze with coding standards
-      - name: "Analyze coding-standards packs"
-        working-directory: pr-code
-        run: |
-          # Debug: Check if database exists
-          if [ ! -d "coding-standards-db" ]; then
-            echo "Error: CodeQL database not found!"
-            exit 1
-          fi
-          
-          echo "Database found, proceeding with analysis..."
-          
-          # Run analysis with error handling
-          $CODEQL_CLI database analyze coding-standards-db \
-            ../workflow-repo/codeql-coding-standards/cpp/cert/src \
-            ../workflow-repo/codeql-coding-standards/cpp/autosar/src \
-            ../workflow-repo/codeql-coding-standards/c/misra/src \
-            --format=sarif-latest \
-            --output=cert-results.sarif \
-            --sarif-category=coding-standards \
-            --threads=2 \
-            --verbose \
-            || {
-              echo "Analysis failed, creating empty SARIF file"
-              cat > cert-results.sarif << 'EOF'
-          {
-            "version": "2.1.0",
-            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-            "runs": [
-              {
-                "tool": {
-                  "driver": {
-                    "name": "CodeQL",
-                    "version": "2.22.0"
-                  }
-                },
-                "results": []
-              }
-            ]
-          }
-          EOF
-            }
-          
-          # Verify SARIF file exists
-          if [ ! -f "cert-results.sarif" ]; then
-            echo "SARIF file still missing, creating minimal one"
-            echo '{"version": "2.1.0", "runs": [{"tool": {"driver": {"name": "CodeQL"}}, "results": []}]}' > cert-results.sarif
-          fi
-          
-          echo "SARIF file created successfully"
-          ls -la cert-results.sarif
+    # ───────── Upload results ─────────
+    - name: Upload SARIF to Security Tab
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: pr-code/cert-results.sarif
+        category: coding-standards
 
-      # 14️⃣ Upload results
-      - name: "Upload SARIF to Security Tab"
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: pr-code/cert-results.sarif
-          category: coding-standards
+    - name: Upload SARIF artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: coding-standards-sarif
+        path: pr-code/cert-results.sarif
 
-      - name: "Upload SARIF artifact"
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coding-standards-sarif
-          path: pr-code/cert-results.sarif
-
-      # 15️⃣ Show caching stats
-      - name: "Show compilation stats"
-        if: always()
-        run: |
-          ccache --show-stats || echo "ccache stats unavailable" | head -100 || true)
-            
-            if [ -n "$CHANGED_FILES" ]; then
-              echo "Changed files: $CHANGED_FILES"
-              for file in $CHANGED_FILES; do
-                if [ -f "$file" ]; then
-                  ccache g++ -c "$file" -I. -std=c++17 -O0 || echo "Failed to compile $file"
-                fi
-              done
-              BUILD_CMD="ccache g++ -c $CHANGED_FILES -I. -std=c++17 -O0"
-            else
-              echo "No source files changed, creating dummy"
-              echo 'int main(){return 0;}' > dummy.cpp
-              ccache g++ -c dummy.cpp
-              BUILD_CMD="ccache g++ -c dummy.cpp"
-            fi
-          else
-            # For push: sample compilation
-            SAMPLE_FILES=$(find . -name "*.cpp" -o -name "*.c" | head -10)
-            if [ -n "$SAMPLE_FILES" ]; then
-              for file in $SAMPLE_FILES; do
-                ccache g++ -c "$file" -I. -std=c++17 -O0 || echo "Failed to compile $file"
-              done
-              BUILD_CMD="ccache g++ -c $SAMPLE_FILES -I. -std=c++17 -O0"
-            else
-              echo 'int main(){return 0;}' > dummy.cpp
-              ccache g++ -c dummy.cpp
-              BUILD_CMD="ccache g++ -c dummy.cpp"
-            fi
-          fi
-          
-          echo "BUILD_CMD=$BUILD_CMD" >> $GITHUB_ENV
-
-      # 12️⃣ Create CodeQL database
-      - name: "Create CodeQL database"
-        working-directory: pr-code
-        run: |
-          # Check if we have actual object files from compilation
-          if ls *.o 2>/dev/null; then
-            echo "Found object files, using build command"
-            $CODEQL_CLI database create coding-standards-db \
-              --language=c-cpp \
-              --command="${{ env.BUILD_CMD }}" \
-              --overwrite
-          else
-            echo "No object files found, using source extraction"
-            $CODEQL_CLI database create coding-standards-db \
-              --language=c-cpp \
-              --source-root=. \
-              --overwrite
-          fi
-
-      # 13️⃣ Analyze with coding standards
-      - name: "Analyze coding-standards packs"
-        working-directory: pr-code
-        run: |
-          $CODEQL_CLI database analyze coding-standards-db \
-            ../workflow-repo/codeql-coding-standards/cpp/cert/src \
-            ../workflow-repo/codeql-coding-standards/cpp/autosar/src \
-            ../workflow-repo/codeql-coding-standards/c/misra/src \
-            --format=sarif-latest \
-            --output=cert-results.sarif \
-            --sarif-category=coding-standards \
-            --threads=$NPROC
-
-      # 14️⃣ Upload results
-      - name: "Upload SARIF to Security Tab"
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: pr-code/cert-results.sarif
-          category: coding-standards
-
-      - name: "Upload SARIF artifact"
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coding-standards-sarif
-          path: pr-code/cert-results.sarif
-
-      # 15️⃣ Show caching stats
-      - name: "Show compilation stats"
-        if: always()
-        run: |
-          ccache --show-stats || echo "ccache stats unavailable"
+    - name: Show ccache stats
+      if: always()
+      run: |
+        ccache --show-stats || true
