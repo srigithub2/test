@@ -25,12 +25,15 @@ jobs:
         repository: github/codeql-coding-standards
         path: codeql-coding-standards
 
-    - name: Setup CodeQL CLI
-      uses: github/codeql-action/setup@v3
-      
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: cpp
+        queries: security-and-quality
+
     - name: Install CodeQL pack dependencies
       run: |
-        # Install dependencies for each pack
+        # Install dependencies for each pack after CodeQL is initialized
         echo "Installing common dependencies..."
         cd codeql-coding-standards/cpp/common/src && codeql pack install && cd ../../../../
         
@@ -43,23 +46,6 @@ jobs:
         # Verify pack installation
         echo "Verifying installed packs..."
         codeql pack ls
-
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: cpp
-        # Don't specify custom queries here - we'll handle them in a custom config
-        config: |
-          name: "Custom CodeQL Config"
-          queries:
-            - name: "Built-in security and quality"
-              uses: security-and-quality
-          paths:
-            - "src"
-          paths-ignore:
-            - "node_modules"
-            - "**/*.js"
-            - "**/*.py"
 
     # Build C/C++ files
     - name: Build C files
