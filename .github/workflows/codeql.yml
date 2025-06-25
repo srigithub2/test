@@ -1,7 +1,17 @@
+name: "CodeQL – Coding Standards Only"
+
+on:
+  pull_request:
+    branches: [ "main", "master" ]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
   coding-standards:
-    name: Coding-Standards (CERT + AUTOSAR)
-    needs: security-extended          # keep if you want serial; drop for parallel
-    runs-on: ubuntu-latest            # switch to self-hosted for faster builds
+    name: Coding-Standards (CERT + AUTOSAR + MISRA)
+    runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
       security-events: write
@@ -9,25 +19,20 @@
       contents: read
 
     steps:
-    ## 1 – check out the workflow repo (needed for config / packs)
-    - uses: actions/checkout@v4
+    - name: Checkout workflow repo
+      uses: actions/checkout@v4
       with:
-        path: workflow-repo           # keep workflow files separate
+        path: workflow-repo
 
-    ## 2 – clone the PR source repo and check out the PR HEAD commit
     - name: Checkout PR source repo
       if: github.event_name == 'pull_request'
       run: |
-        git clone --depth 1 \
-          "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
+        git clone --depth 1 "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
         cd pr-code
-        git fetch origin \
-          ${{ github.event.pull_request.base.ref }} \
-          ${{ github.event.pull_request.head.sha }}
+        git fetch origin ${{ github.event.pull_request.base.ref }} ${{ github.event.pull_request.head.sha }}
         git checkout ${{ github.event.pull_request.head.sha }}
 
-    ## fallback for push / manual runs (code is in the same repo)
-    - name: Use current repo for push event
+    - name: Fallback: Use current repo if not a PR
       if: github.event_name != 'pull_request'
       run: |
         mkdir pr-code
@@ -41,7 +46,7 @@
           - generated/**
         YML
 
-    - name: Init CodeQL (C + C++)
+    - name: Init CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: c-cpp
@@ -51,15 +56,13 @@
           github/codeql-coding-standards/cpp/autosar
           github/codeql-coding-standards/c/misra
 
-    # ── install packs (same as before) ─────────────────────────────
-    - name: Install Coding-Standards packs
+    - name: Install Coding-Standards Packs
       run: |
         cd workflow-repo/codeql-coding-standards/cpp/common/src && codeql pack install && cd -
         cd workflow-repo/codeql-coding-standards/cpp/cert/src   && codeql pack install && cd -
         cd workflow-repo/codeql-coding-standards/c/misra/src    && codeql pack install && cd -
 
-    # ── compile only changed C/C++ files ──────────────────────────
-    - name: Build changed files (or dummy)
+    - name: Build Changed Files (or fallback)
       working-directory: pr-code
       run: |
         if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -73,25 +76,23 @@
         if [ -z "$CHANGED" ]; then
           echo 'int main(){return 0;}' > dummy.cpp
           g++ -c dummy.cpp
-          BUILD_CMD="g++ -c dummy.cpp"
+          echo "BUILD_CMD=g++ -c dummy.cpp" >> $GITHUB_ENV
         else
           for f in $CHANGED; do
             g++ -c "$f" || true
           done
-          BUILD_CMD="g++ -c $CHANGED"
+          echo "BUILD_CMD=g++ -c $CHANGED" >> $GITHUB_ENV
         fi
-        echo "BUILD_CMD=$BUILD_CMD" >> $GITHUB_ENV
 
-    # ── create database from that build ───────────────────────────
     - name: Create CodeQL database
       working-directory: pr-code
       run: |
+        ${{ env.BUILD_CMD }}
         codeql database create coding-standards-db \
           --language=c-cpp \
-          --command="$BUILD_CMD"
+          --command="${{ env.BUILD_CMD }}"
 
-    # ── analyze with full packs ───────────────────────────────────
-    - name: Analyze (CERT + AUTOSAR + MISRA)
+    - name: Analyze
       working-directory: pr-code
       run: |
         codeql database analyze coding-standards-db \
@@ -105,7 +106,7 @@
         sarif_file: pr-code/cert-results.sarif
         category: coding-standards
 
-    - name: Upload SARIF as artifact
+    - name: Upload SARIF artifact
       uses: actions/upload-artifact@v4
       with:
         name: coding-standards-sarif
