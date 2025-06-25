@@ -1,6 +1,6 @@
 // src/unsafe.c
 #include <stdio.h>
-
+//TEST
 int global;
 
 int main(void) {
