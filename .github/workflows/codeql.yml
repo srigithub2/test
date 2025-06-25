@@ -19,12 +19,13 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout workflow repo
+        uses: actions/checkout@v4
         with:
           path: workflow-repo
           fetch-depth: 0
 
-      - name: Clone PR source
+      - name: Clone PR source repo
         if: github.event_name == 'pull_request'
         run: |
           git clone --depth 1 "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
