@@ -33,7 +33,7 @@ jobs:
           git fetch origin "${{ github.event.pull_request.head.sha }}"
           git checkout "${{ github.event.pull_request.head.sha }}"
 
-      - name: Fallback: use current repo (push)
+      - name: "Fallback: use current repo (push)"
         if: github.event_name != 'pull_request'
         run: |
           mkdir pr-code
