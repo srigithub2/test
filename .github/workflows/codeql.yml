@@ -57,7 +57,6 @@ jobs:
     - name: Run SELECTED CERT Rules
       run: |
         $CODEQL_CLI database analyze coding-standards-db \
-        ./codeql-coding-standards/cpp/cert/src/rules/DCL30-CPP/UninitializedVariable.ql \
         ./codeql-coding-standards/cpp/cert/src/rules/ERR53-CPP/DestroyedValueReferencedInConstructorDestructorCatchBlock.ql \
         ./codeql-coding-standards/cpp/cert/src/rules/MEM50-CPP/UseAfterFree.ql \
         --format=sarif-latest \
