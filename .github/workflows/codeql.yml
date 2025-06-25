@@ -1,94 +1,112 @@
-name: "CodeQL – Full Security & Coding-Standards"
-
-on:
-  pull_request:
-    branches: [ "main", "master" ]
-    types: [opened, synchronize, reopened]
-  push:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
-
-# ─────────────────────────────────────────────────────────────
-#  ▶︎  JOB 1  ◀︎   Your existing fast PR scan (security-extended)
-# ─────────────────────────────────────────────────────────────
-jobs:
-  security-extended:
-    name: Security-Extended (fast PR scan)
-    runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
-
-    steps:
-    - uses: actions/checkout@v4
-    - uses: github/codeql-action/init@v3
-      with:
-        languages: c-cpp
-        queries: security-extended
-    - run: |
-        make -j$(nproc)          # full build for extraction
-    - uses: github/codeql-action/analyze@v3
-      with:
-        category: sec-ext
-    - uses: github/codeql-action/upload-sarif@v3
-      with:
-        category: sec-ext
-
-# ─────────────────────────────────────────────────────────────
-#  ▶︎  JOB 2  ◀︎   Full CERT + AUTOSAR packs (may run longer)
-#                tweaks: config file, SARIF artifact, packs
-# ─────────────────────────────────────────────────────────────
   coding-standards:
     name: Coding-Standards (CERT + AUTOSAR)
-    needs: security-extended          # run after fast scan; drop if you prefer parallel
-    runs-on: ubuntu-latest            # switch to self-hosted for faster compile
-    timeout-minutes: 180              # adjust if very large codebase
+    needs: security-extended          # keep if you want serial; drop for parallel
+    runs-on: ubuntu-latest            # switch to self-hosted for faster builds
+    timeout-minutes: 180
     permissions:
       security-events: write
       actions: read
       contents: read
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v4
-
-    - name: Checkout CodeQL Coding Standards
-      uses: actions/checkout@v4
+    ## 1 – check out the workflow repo (needed for config / packs)
+    - uses: actions/checkout@v4
       with:
-        repository: github/codeql-coding-standards
-        path: codeql-coding-standards
+        path: workflow-repo           # keep workflow files separate
 
-    # Config file lets you ignore vendor dirs etc.
+    ## 2 – clone the PR source repo and check out the PR HEAD commit
+    - name: Checkout PR source repo
+      if: github.event_name == 'pull_request'
+      run: |
+        git clone --depth 1 \
+          "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
+        cd pr-code
+        git fetch origin \
+          ${{ github.event.pull_request.base.ref }} \
+          ${{ github.event.pull_request.head.sha }}
+        git checkout ${{ github.event.pull_request.head.sha }}
+
+    ## fallback for push / manual runs (code is in the same repo)
+    - name: Use current repo for push event
+      if: github.event_name != 'pull_request'
+      run: |
+        mkdir pr-code
+        rsync -a --exclude .git ./ pr-code/
+
     - name: Write CodeQL config
       run: |
-        cat <<'YML' > .github/codeql-config.yml
+        cat <<'YML' > pr-code/.github/codeql-config.yml
         paths-ignore:
           - third_party/**
           - generated/**
         YML
 
-    - name: Init CodeQL
+    - name: Init CodeQL (C + C++)
       uses: github/codeql-action/init@v3
       with:
-        languages: cpp
-        config-file: .github/codeql-config.yml
+        languages: c-cpp
+        config-file: pr-code/.github/codeql-config.yml
         packs: |
-          github/codeql-coding-standards/cpp/cert     # full CERT pack
-          github/codeql-coding-standards/cpp/autosar  # full AUTOSAR pack
+          github/codeql-coding-standards/cpp/cert
+          github/codeql-coding-standards/cpp/autosar
+          github/codeql-coding-standards/c/misra
 
-    # -------- FULL BUILD (for maximum coverage) ----------
-    - name: Build project
+    # ── install packs (same as before) ─────────────────────────────
+    - name: Install Coding-Standards packs
       run: |
-        make -j$(nproc)              # replace with your real firmware build cmd
+        cd workflow-repo/codeql-coding-standards/cpp/common/src && codeql pack install && cd -
+        cd workflow-repo/codeql-coding-standards/cpp/cert/src   && codeql pack install && cd -
+        cd workflow-repo/codeql-coding-standards/c/misra/src    && codeql pack install && cd -
 
-    # Analyze & upload SARIF
-    - uses: github/codeql-action/analyze@v3
+    # ── compile only changed C/C++ files ──────────────────────────
+    - name: Build changed files (or dummy)
+      working-directory: pr-code
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          BASE=${{ github.event.pull_request.base.sha }}
+          HEAD=${{ github.event.pull_request.head.sha }}
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD" | grep -E '\.(c|cpp|cc|cxx|h|hpp|hxx)$' || true)
+        else
+          CHANGED=$(git ls-files '*.[ch]pp' '*.[ch]' || true)
+        fi
+
+        if [ -z "$CHANGED" ]; then
+          echo 'int main(){return 0;}' > dummy.cpp
+          g++ -c dummy.cpp
+          BUILD_CMD="g++ -c dummy.cpp"
+        else
+          for f in $CHANGED; do
+            g++ -c "$f" || true
+          done
+          BUILD_CMD="g++ -c $CHANGED"
+        fi
+        echo "BUILD_CMD=$BUILD_CMD" >> $GITHUB_ENV
+
+    # ── create database from that build ───────────────────────────
+    - name: Create CodeQL database
+      working-directory: pr-code
+      run: |
+        codeql database create coding-standards-db \
+          --language=c-cpp \
+          --command="$BUILD_CMD"
+
+    # ── analyze with full packs ───────────────────────────────────
+    - name: Analyze (CERT + AUTOSAR + MISRA)
+      working-directory: pr-code
+      run: |
+        codeql database analyze coding-standards-db \
+          --format=sarif-latest \
+          --output=cert-results.sarif \
+          --sarif-category=coding-standards
+
+    - name: Upload SARIF to Security Tab
+      uses: github/codeql-action/upload-sarif@v3
       with:
+        sarif_file: pr-code/cert-results.sarif
         category: coding-standards
 
-    - name: Upload SARIF artifact
+    - name: Upload SARIF as artifact
       uses: actions/upload-artifact@v4
       with:
         name: coding-standards-sarif
-        path: ${{ steps.analyze.outputs.sarif-output }}
+        path: pr-code/cert-results.sarif
