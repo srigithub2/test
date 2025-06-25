@@ -11,7 +11,7 @@ on:
 jobs:
   coding-standards:
     name: "Coding-Standards (CERT + AUTOSAR + MISRA-C)"
-    runs-on: self-hosted              # Use self-hosted for better caching
+    runs-on: ubuntu-latest             # Use GitHub-hosted runners
     timeout-minutes: 60               # Reduced from 180
     permissions:
       security-events: write
@@ -72,13 +72,11 @@ jobs:
       # 6️⃣ Setup fast compilation
       - name: "Setup ccache and parallel compilation"
         run: |
-          # Install ccache if not available
-          if ! command -v ccache &> /dev/null; then
-            sudo apt-get update && sudo apt-get install -y ccache
-          fi
+          # Install ccache
+          sudo apt-get update && sudo apt-get install -y ccache
           echo "CC=ccache gcc" >> $GITHUB_ENV
           echo "CXX=ccache g++" >> $GITHUB_ENV
-          ccache --set-config=max_size=2G
+          ccache --set-config=max_size=1G
           ccache --zero-stats
 
       # 7️⃣ CodeQL config
