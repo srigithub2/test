@@ -3,8 +3,10 @@ name: "CodeQL Coding Standards ONLY"
 on:
   pull_request:
     branches: [ "main", "master" ]
+    types: [opened, synchronize, reopened]
   push:
     branches: [ "main", "master" ]
+  workflow_dispatch:  # Allow manual triggering
 
 jobs:
   analyze:
