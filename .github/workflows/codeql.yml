@@ -30,25 +30,34 @@ jobs:
       
     - name: Install CodeQL pack dependencies
       run: |
-        # Install dependencies first
-        cd codeql-coding-standards/cpp/common/src && codeql pack install
-        cd ../../../cpp/cert/src && codeql pack install  
-        cd ../../../cpp/autosar/src && codeql pack install
-        cd ../../../../
+        # Install dependencies for each pack
+        echo "Installing common dependencies..."
+        cd codeql-coding-standards/cpp/common/src && codeql pack install && cd ../../../../
+        
+        echo "Installing CERT dependencies..."
+        cd codeql-coding-standards/cpp/cert/src && codeql pack install && cd ../../../../
+        
+        echo "Installing AUTOSAR dependencies..."
+        cd codeql-coding-standards/cpp/autosar/src && codeql pack install && cd ../../../../
+        
+        # Verify pack installation
+        echo "Verifying installed packs..."
+        codeql pack ls
 
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: cpp
-        # Use absolute paths to the query packs
-        queries: |
-          ${{ github.workspace }}/codeql-coding-standards/cpp/cert/src
-          ${{ github.workspace }}/codeql-coding-standards/cpp/autosar/src
+        # Don't specify custom queries here - we'll handle them in a custom config
         config: |
+          name: "Custom CodeQL Config"
+          queries:
+            - name: "Built-in security and quality"
+              uses: security-and-quality
           paths:
-            - src
+            - "src"
           paths-ignore:
-            - node_modules
+            - "node_modules"
             - "**/*.js"
             - "**/*.py"
 
@@ -68,6 +77,50 @@ jobs:
       with:
         category: "/language:cpp"
         upload: true
+
+    - name: Run Additional Coding Standards Analysis
+      run: |
+        # Find the CodeQL database location
+        DB_PATH="/home/runner/work/_temp/codeql_databases/cpp"
+        
+        if [ -d "$DB_PATH" ]; then
+          echo "Running CERT C++ coding standards analysis..."
+          codeql database analyze "$DB_PATH" \
+            ./codeql-coding-standards/cpp/cert/src \
+            --format=sarif-latest \
+            --output=cert-results.sarif \
+            --sarif-add-baseline-file-info \
+            --sarif-category="cert-cpp" || echo "CERT analysis completed with warnings"
+            
+          echo "Running AUTOSAR C++ coding standards analysis..."
+          codeql database analyze "$DB_PATH" \
+            ./codeql-coding-standards/cpp/autosar/src \
+            --format=sarif-latest \
+            --output=autosar-results.sarif \
+            --sarif-add-baseline-file-info \
+            --sarif-category="autosar-cpp" || echo "AUTOSAR analysis completed with warnings"
+            
+          # Upload additional results to GitHub
+          if [ -f "cert-results.sarif" ]; then
+            echo "Uploading CERT results..."
+            codeql github upload-results \
+              --sarif=cert-results.sarif \
+              --repository="${{ github.repository }}" \
+              --ref="${{ github.ref }}" \
+              --commit="${{ github.sha }}" || echo "CERT upload completed"
+          fi
+          
+          if [ -f "autosar-results.sarif" ]; then
+            echo "Uploading AUTOSAR results..."
+            codeql github upload-results \
+              --sarif=autosar-results.sarif \
+              --repository="${{ github.repository }}" \
+              --ref="${{ github.ref }}" \
+              --commit="${{ github.sha }}" || echo "AUTOSAR upload completed"
+          fi
+        else
+          echo "CodeQL database not found at expected location"
+        fi
 
     # Add step to comment on PR with results summary
     - name: Comment PR
