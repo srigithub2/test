@@ -31,8 +31,8 @@ jobs:
         cd pr-code
         git fetch origin ${{ github.event.pull_request.base.ref }} ${{ github.event.pull_request.head.sha }}
         git checkout ${{ github.event.pull_request.head.sha }}
-
-    - name: Fallback: Use current repo if not a PR
+        
+    - name: "Fallback: Use current repo if not a PR"
       if: github.event_name != 'pull_request'
       run: |
         mkdir pr-code
@@ -40,11 +40,10 @@ jobs:
 
     - name: Write CodeQL config
       run: |
-        cat <<'YML' > pr-code/.github/codeql-config.yml
-        paths-ignore:
-          - third_party/**
-          - generated/**
-        YML
+        mkdir -p pr-code/.github
+        echo "paths-ignore:"                         >  pr-code/.github/codeql-config.yml
+        echo "  - third_party/**"                    >> pr-code/.github/codeql-config.yml
+        echo "  - generated/**"                      >> pr-code/.github/codeql-config.yml
 
     - name: Init CodeQL
       uses: github/codeql-action/init@v3
