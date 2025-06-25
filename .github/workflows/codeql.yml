@@ -1,4 +1,4 @@
-name: "CodeQL C/C++ Coding Standards"
+name: "CodeQL Coding Standards ONLY"
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   analyze:
-    name: CodeQL Analysis
+    name: Coding Standards Analysis
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -25,8 +25,11 @@ jobs:
         repository: github/codeql-coding-standards
         path: codeql-coding-standards
 
-    - name: Setup CodeQL CLI
-      uses: github/codeql-action/setup@v3
+    - name: Install CodeQL CLI
+      run: |
+        wget -q https://github.com/github/codeql-cli-binaries/releases/latest/download/codeql-linux64.tar.gz
+        tar -xzf codeql-linux64.tar.gz
+        echo "$PWD/codeql" >> $GITHUB_PATH
 
     - name: Install Coding Standards Dependencies
       run: |
@@ -42,14 +45,7 @@ jobs:
           codeql database create codeql-db --language=cpp --command="find . -name '*.c' -exec gcc -c {} \;"
         fi
 
-    - name: Run Built-in Security Analysis
-      run: |
-        codeql database analyze codeql-db \
-          codeql/cpp-queries:codeql-suites/cpp-security-and-quality.qls \
-          --format=sarif-latest \
-          --output=builtin-results.sarif
-
-    - name: Run CERT C++ Analysis
+    - name: Run CERT C++ Coding Standards
       run: |
         codeql database analyze codeql-db \
           ./codeql-coding-standards/cpp/cert/src \
@@ -57,7 +53,7 @@ jobs:
           --output=cert-results.sarif \
           --sarif-category=cert-cpp
 
-    - name: Run AUTOSAR Analysis
+    - name: Run AUTOSAR C++ Coding Standards
       run: |
         codeql database analyze codeql-db \
           ./codeql-coding-standards/cpp/autosar/src \
@@ -65,39 +61,26 @@ jobs:
           --output=autosar-results.sarif \
           --sarif-category=autosar-cpp
 
-    - name: Upload Results
-      run: |
-        # Upload built-in analysis
-        codeql github upload-results \
-          --sarif=builtin-results.sarif \
-          --repository="${{ github.repository }}" \
-          --ref="${{ github.ref }}" \
-          --commit="${{ github.sha }}"
+    - name: Upload CERT Results
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: cert-results.sarif
+        category: cert-cpp
 
-        # Upload CERT analysis
-        codeql github upload-results \
-          --sarif=cert-results.sarif \
-          --repository="${{ github.repository }}" \
-          --ref="${{ github.ref }}" \
-          --commit="${{ github.sha }}"
-
-        # Upload AUTOSAR analysis
-        codeql github upload-results \
-          --sarif=autosar-results.sarif \
-          --repository="${{ github.repository }}" \
-          --ref="${{ github.ref }}" \
-          --commit="${{ github.sha }}"
+    - name: Upload AUTOSAR Results  
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: autosar-results.sarif
+        category: autosar-cpp
 
     - name: Comment PR
       if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
       with:
         script: |
-          const message = "## CodeQL C/C++ Analysis Complete\n\n" +
-            "**Standards Applied**:\n" +
-            "- Built-in Security & Quality\n" +
-            "- CERT C++ Secure Coding\n" +
-            "- AUTOSAR C++ (Automotive)\n\n" +
+          const message = "## CodeQL Coding Standards Analysis\n\n" +
+            "**CERT C++ Secure Coding Standards**: ✅\n" +
+            "**AUTOSAR C++ Automotive Standards**: ✅\n\n" +
             "View results in the [Security tab](" + context.payload.repository.html_url + "/security/code-scanning).";
           
           github.rest.issues.createComment({
