@@ -15,36 +15,49 @@ jobs:
       contents: read
       security-events: write
 
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [ 'cpp', 'c' ]
-        # Add or remove languages based on your repository content
-        # Supported languages: 'cpp', 'csharp', 'go', 'java', 'javascript', 'python', 'ruby'
+
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Checkout CodeQL Coding Standards
+      uses: actions/checkout@v4
+      with:
+        repository: github/codeql-coding-standards
+        path: codeql-coding-standards
+
+    - name: Install CodeQL pack dependencies
+      run: |
+        codeql pack install ./codeql-coding-standards/cpp/cert/src/
+        codeql pack install ./codeql-coding-standards/cpp/autosar/src/
+        codeql pack install ./codeql-coding-standards/cpp/common/src/
+
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
-        # Use the coding standards query pack
-        # queries: github/codeql-coding-standards@main
-        # You can also specify specific query suites:
-        queries:
-           github/codeql-coding-standards@main
-           github/codeql-coding-standards/cpp/cert@main
-           github/codeql-coding-standards/cpp/autosar@main
+        # Use the src directories as query packs
+        queries: |
+          ./codeql-coding-standards/cpp/cert/src
+          ./codeql-coding-standards/cpp/autosar/src
 
-    # Autobuild attempts to build any compiled languages (C/C++, C#, Go, or Java).
+    # Custom build steps for simple C files
+    - name: Build C files
+      if: matrix.language == 'cpp'
+      run: |
+        # Try to use make if Makefile exists, otherwise compile C files directly
+        if [ -f "Makefile" ]; then
+          make
+        else
+          # Compile all C files
+          find . -name "*.c" -exec gcc -c {} \;
+        fi
+    
+    # Autobuild for other languages
     - name: Autobuild
+      if: matrix.language != 'cpp'
       uses: github/codeql-action/autobuild@v3
-      # If autobuild fails, you can replace it with custom build steps:
-      # - run: |
-      #     make bootstrap
-      #     make release
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
@@ -73,9 +86,11 @@ jobs:
           
           if (codeqlCheck) {
             const message = `## CodeQL Coding Standards Analysis
-            **Status**: ${codeqlCheck.conclusion || 'In Progress'}
-            **Language**: ${{ matrix.language }}
-            View detailed results in the [Security tab](${context.payload.repository.html_url}/security/code-scanning).
+            
+**Status**: ${codeqlCheck.conclusion || 'In Progress'}
+**Language**: ${{ matrix.language }}
+
+View detailed results in the [Security tab](${context.payload.repository.html_url}/security/code-scanning).
             `;
             
             github.rest.issues.createComment({
