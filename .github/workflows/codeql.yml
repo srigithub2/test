@@ -10,8 +10,8 @@ on:
 
 jobs:
   analyze:
+    runs-on: ubuntu-latest-xl 
     name: Coding Standards Analysis
-    runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
