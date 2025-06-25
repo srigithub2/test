@@ -1,0 +1,87 @@
+name: "CodeQL Coding Standards Analysis"
+
+on:
+  pull_request:
+    branches: [ "main", "master" ]
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'cpp', 'c' ]
+        # Add or remove languages based on your repository content
+        # Supported languages: 'cpp', 'csharp', 'go', 'java', 'javascript', 'python', 'ruby'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        # Use the coding standards query pack
+        # queries: github/codeql-coding-standards@main
+        # You can also specify specific query suites:
+        queries:
+           github/codeql-coding-standards@main
+           github/codeql-coding-standards/cpp/cert@main
+           github/codeql-coding-standards/cpp/autosar@main
+
+    # Autobuild attempts to build any compiled languages (C/C++, C#, Go, or Java).
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+      # If autobuild fails, you can replace it with custom build steps:
+      # - run: |
+      #     make bootstrap
+      #     make release
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"
+        # Upload results to GitHub Security tab
+        upload: true
+        # Fail the workflow if issues are found (optional)
+        # fail-on-error: true
+
+    # Optional: Add step to comment on PR with results summary
+    - name: Comment PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: checks } = await github.rest.checks.listForRef({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: context.sha,
+          });
+          
+          const codeqlCheck = checks.check_runs.find(check => 
+            check.name.includes('CodeQL') || check.name.includes('analyze')
+          );
+          
+          if (codeqlCheck) {
+            const message = `## CodeQL Coding Standards Analysis
+            **Status**: ${codeqlCheck.conclusion || 'In Progress'}
+            **Language**: ${{ matrix.language }}
+            View detailed results in the [Security tab](${context.payload.repository.html_url}/security/code-scanning).
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: message
+            });
+          }
