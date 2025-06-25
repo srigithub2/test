@@ -11,7 +11,7 @@ on:
 jobs:
   coding-standards:
     name: "Coding-Standards (CERT + AUTOSAR + MISRA-C)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest              # switch to self-hosted for large builds
     timeout-minutes: 180
     permissions:
       security-events: write
@@ -19,14 +19,14 @@ jobs:
       contents: read
 
     steps:
-      # 1️⃣ Workflow repo (contains this YAML)
+      # 1️⃣ Checkout this workflow repository
       - name: "Checkout workflow repo"
         uses: actions/checkout@v4
         with:
           path: workflow-repo
           fetch-depth: 0
 
-      # 2️⃣ Clone the CodeQL Coding Standards packs
+      # 2️⃣ Clone CodeQL Coding Standards packs
       - name: "Checkout CodeQL Coding Standards"
         uses: actions/checkout@v4
         with:
@@ -34,7 +34,7 @@ jobs:
           path: workflow-repo/codeql-coding-standards
           fetch-depth: 1
 
-      # 3️⃣ Clone PR source repo (if PR)  ───────────────
+      # 3️⃣ Clone PR source repo (if event is pull_request)
       - name: "Clone PR source repo"
         if: github.event_name == 'pull_request'
         run: |
@@ -43,14 +43,14 @@ jobs:
           git fetch origin "${{ github.event.pull_request.head.sha }}"
           git checkout "${{ github.event.pull_request.head.sha }}"
 
-      # 4️⃣ Fallback for push events (same repo)
+      # 4️⃣ Fallback for push events (same repository)
       - name: "Fallback: use current repo (push)"
         if: github.event_name != 'pull_request'
         run: |
           mkdir pr-code
           rsync -a --exclude .git ./ pr-code/
 
-      # 5️⃣ Minimal CodeQL config
+      # 5️⃣ Minimal CodeQL config (ignore vendor / generated)
       - name: "Write CodeQL config"
         run: |
           mkdir -p pr-code/.github
@@ -67,16 +67,32 @@ jobs:
           languages: c-cpp
           config-file: pr-code/.github/codeql-config.yml
 
-      # 7️⃣ Install local pack dependencies
+      # 7️⃣ Locate the CodeQL CLI for later pack install / analyze
+      - name: "Locate CodeQL CLI"
+        run: |
+          CODEQL_CLI=$(which codeql || true)
+          if [ -z "$CODEQL_CLI" ]; then
+            CODEQL_CLI=$(find /opt/hostedtoolcache -type f -name codeql | head -n 1)
+          fi
+          echo "CODEQL_CLI=$CODEQL_CLI" >> "$GITHUB_ENV"
+          echo "Using CodeQL CLI at: $CODEQL_CLI"
+
+      # 8️⃣ Install local pack dependencies
       - name: "Install coding-standards packs"
         run: |
-          cd workflow-repo/codeql-coding-standards/cpp/common/src   && codeql pack install && cd -
-          cd workflow-repo/codeql-coding-standards/cpp/cert/src     && codeql pack install && cd -
-          cd workflow-repo/codeql-coding-standards/cpp/autosar/src  && codeql pack install && cd -
-          cd workflow-repo/codeql-coding-standards/c/misra/src      && codeql pack install && cd -
+          for dir in \
+            workflow-repo/codeql-coding-standards/cpp/common/src \
+            workflow-repo/codeql-coding-standards/cpp/cert/src \
+            workflow-repo/codeql-coding-standards/cpp/autosar/src \
+            workflow-repo/codeql-coding-standards/c/misra/src
+          do
+            cd "$dir"
+            $CODEQL_CLI pack install
+            cd -
+          done
 
-      # 8️⃣ Build only changed source files (dummy fallback)
-      - name: "Build changed C/C++ files"
+      # 9️⃣ Compile only changed C/C++ files (dummy fallback)
+      - name: "Build changed files"
         working-directory: pr-code
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -86,9 +102,8 @@ jobs:
           else
             CHANGED=$(git ls-files '*.[ch]pp' '*.[ch]' || true)
           fi
-
           if [ -z "$CHANGED" ]; then
-            echo 'int main(){ return 0; }' > dummy.cpp
+            echo 'int main(){return 0;}' > dummy.cpp
             g++ -c dummy.cpp
             echo "BUILD_CMD=g++ -c dummy.cpp" >> $GITHUB_ENV
           else
@@ -96,28 +111,33 @@ jobs:
             echo "BUILD_CMD=g++ -c $CHANGED" >> $GITHUB_ENV
           fi
 
-      # 9️⃣ Create CodeQL database
+      # 🔟 Create CodeQL database
       - name: "Create CodeQL database"
         working-directory: pr-code
         run: |
           ${{ env.BUILD_CMD }}
-          codeql database create coding-standards-db \
+          $CODEQL_CLI database create coding-standards-db \
             --language=c-cpp \
             --command="${{ env.BUILD_CMD }}"
 
-      # 🔟 Analyze with CERT, AUTOSAR, MISRA-C packs
+      # 11️⃣ Analyze with CERT, AUTOSAR, MISRA-C
       - name: "Analyze coding-standards packs"
         working-directory: pr-code
         run: |
-          codeql database analyze coding-standards-db \
-            workflow-repo/codeql-coding-standards/cpp/cert/src \
-            workflow-repo/codeql-coding-standards/cpp/autosar/src \
-            workflow-repo/codeql-coding-standards/c/misra/src \
+          $CODEQL_CLI database analyze coding-standards-db \
+            ../workflow-repo/codeql-coding-standards/cpp/cert/src \
+            ../workflow-repo/codeql-coding-standards/cpp/autosar/src \
+            ../workflow-repo/codeql-coding-standards/c/misra/src \
             --format=sarif-latest \
             --output=cert-results.sarif \
             --sarif-category=coding-standards
 
-      # 11️⃣ Upload SARIF
+      # 12️⃣ Ensure SARIF exists and upload
+      - name: "Check SARIF exists"
+        working-directory: pr-code
+        run: |
+          test -f cert-results.sarif && echo "SARIF ready." || (echo "SARIF missing!" && exit 1)
+
       - name: "Upload SARIF to Security Tab"
         uses: github/codeql-action/upload-sarif@v3
         with:
