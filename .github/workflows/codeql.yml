@@ -27,42 +27,61 @@ jobs:
         repository: github/codeql-coding-standards
         path: codeql-coding-standards
 
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: cpp
-
     - name: Locate CodeQL CLI
       run: |
         CODEQL_PATH=$(find /opt/hostedtoolcache -name codeql -type f 2>/dev/null | head -1)
         echo "$(dirname "$CODEQL_PATH")" >> "$GITHUB_PATH"
         echo "CODEQL_CLI=$CODEQL_PATH"   >> "$GITHUB_ENV"
 
-    - name: Install Coding-Standards Packs
+    - name: Ensure violations.cpp exists
       run: |
-        cd codeql-coding-standards/cpp/common/src   && $CODEQL_CLI pack install && cd -
-        cd codeql-coding-standards/cpp/cert/src     && $CODEQL_CLI pack install && cd -
+        mkdir -p src
+        cat <<EOF > src/violations.cpp
+        #include <iostream>
+        class Bad {
+            int* p;
+        public:
+            Bad() : p(new int(42)) {}
+            ~Bad() noexcept {
+                delete p;
+                int val = *p;  // ERR53-CPP
+                (void)val;
+            }
+        };
 
-    - name: Create CodeQL Database
+        void use_after_free() {
+            int* ptr = new int(10);
+            delete ptr;
+            *ptr = 5;         // MEM50-CPP
+        }
+
+        int main() {
+            Bad b;
+            use_after_free();
+            return 0;
+        }
+        EOF
+
+    - name: Create CodeQL database
       run: |
-        # Compile the actual test file under src/
         g++ -c src/violations.cpp
-
-        # Build the CodeQL database using that same command
         $CODEQL_CLI database create coding-standards-db \
           --language=cpp \
           --command="g++ -c src/violations.cpp"
 
+    - name: Install Coding-Standards Packs
+      run: |
+        cd codeql-coding-standards/cpp/common/src && $CODEQL_CLI pack install && cd -
+        cd codeql-coding-standards/cpp/cert/src   && $CODEQL_CLI pack install && cd -
 
     - name: Run SELECTED CERT Rules
       run: |
         $CODEQL_CLI database analyze coding-standards-db \
-        ./codeql-coding-standards/cpp/cert/src/rules/ERR53-CPP/DestroyedValueReferencedInConstructorDestructorCatchBlock.ql \
-        ./codeql-coding-standards/cpp/cert/src/rules/MEM50-CPP/UseAfterFree.ql \
-        --format=sarif-latest \
-        --output=cert-results.sarif \
-        --sarif-category=cert-cpp
-
+          ./codeql-coding-standards/cpp/cert/src/rules/ERR53-CPP/DestroyedValueReferencedInConstructorDestructorCatchBlock.ql \
+          ./codeql-coding-standards/cpp/cert/src/rules/MEM50-CPP/UseAfterFree.ql \
+          --format=sarif-latest \
+          --output=cert-results.sarif \
+          --sarif-category=cert-cpp
 
     - name: Upload SARIF to Security Tab
       uses: github/codeql-action/upload-sarif@v3
