@@ -1,4 +1,4 @@
-name: "CodeQL – Security Extended & Coding-Standards"
+name: "CodeQL – Coding‑Standards Only"
 
 on:
   pull_request:
@@ -9,37 +9,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  security-extended:
-    name: Security-Extended (fast)
-    runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-
-      - name: Init CodeQL (security-extended)
-        uses: github/codeql-action/init@v3
-        with:
-          languages: c-cpp
-          queries: security-extended
-
-      - name: Build (dummy for extraction)
-        run: |
-          echo 'int main(){return 0;}' > dummy.cpp
-          g++ -c dummy.cpp
-
-      - uses: github/codeql-action/analyze@v3
-        with:
-          category: sec-ext
-
   coding-standards:
-    name: Coding-Standards (CERT + AUTOSAR + MISRA-C)
-    needs: security-extended
+    name: Coding‑Standards (CERT + AUTOSAR + MISRA‑C)
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
@@ -59,9 +30,9 @@ jobs:
           git clone --depth 1 "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
           cd pr-code
           git fetch origin ${{ github.event.pull_request.head.sha }}
-          git checkout     ${{ github.event.pull_request.head.sha }}
+          git checkout ${{ github.event.pull_request.head.sha }}
 
-      - name: "Fallback: use current repo (push)"
+      - name: Fallback: use current repo (push)
         if: github.event_name != 'pull_request'
         run: |
           mkdir pr-code
@@ -70,25 +41,22 @@ jobs:
       - name: Write CodeQL config
         run: |
           mkdir -p pr-code/.github
-          echo "paths-ignore:"              >  pr-code/.github/codeql-config.yml
-          echo "  - third_party/**"         >> pr-code/.github/codeql-config.yml
-          echo "  - generated/**"           >> pr-code/.github/codeql-config.yml
+          echo "paths-ignore:" > pr-code/.github/codeql-config.yml
+          echo "  - third_party/**" >> pr-code/.github/codeql-config.yml
+          echo "  - generated/**" >> pr-code/.github/codeql-config.yml
 
-      - name: Init CodeQL (coding-standards)
+      - name: Init CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: c-cpp
           config-file: pr-code/.github/codeql-config.yml
-          packs: |
-            workflow-repo/codeql-coding-standards/cpp/cert/src
-            workflow-repo/codeql-coding-standards/cpp/autosar/src
-            workflow-repo/codeql-coding-standards/c/misra/src
 
       - name: Install coding-standards packs
         run: |
           cd workflow-repo/codeql-coding-standards/cpp/common/src && codeql pack install && cd -
-          cd workflow-repo/codeql-coding-standards/cpp/cert/src   && codeql pack install && cd -
-          cd workflow-repo/codeql-coding-standards/c/misra/src    && codeql pack install && cd -
+          cd workflow-repo/codeql-coding-standards/cpp/cert/src && codeql pack install && cd -
+          cd workflow-repo/codeql-coding-standards/cpp/autosar/src && codeql pack install && cd -
+          cd workflow-repo/codeql-coding-standards/c/misra/src && codeql pack install && cd -
 
       - name: Build changed files
         working-directory: pr-code
@@ -96,7 +64,7 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE=${{ github.event.pull_request.base.sha }}
             HEAD=${{ github.event.pull_request.head.sha }}
-            CHANGED=$(git diff --name-only "$BASE" "$HEAD" | grep -E '\\.(c|cpp|cc|cxx|h|hpp|hxx)$' || true)
+            CHANGED=$(git diff --name-only "$BASE" "$HEAD" | grep -E '\.(c|cpp|cc|cxx|h|hpp|hxx)$' || true)
           else
             CHANGED=$(git ls-files '*.[ch]pp' '*.[ch]' || true)
           fi
@@ -121,6 +89,9 @@ jobs:
         working-directory: pr-code
         run: |
           codeql database analyze coding-standards-db \
+            workflow-repo/codeql-coding-standards/cpp/cert/src \
+            workflow-repo/codeql-coding-standards/cpp/autosar/src \
+            workflow-repo/codeql-coding-standards/c/misra/src \
             --format=sarif-latest \
             --output=cert-results.sarif \
             --sarif-category=coding-standards
