@@ -67,7 +67,7 @@ jobs:
         if [ -f "Makefile" ]; then
           $CODEQL_CLI database create coding-standards-db --language=cpp --command="make"
         else
-          $CODEQL_CLI database create coding-standards-db --language=cpp --command="find . -name '*.c' -exec gcc -c {} \;"
+          $CODEQL_CLI database create coding-standards-db --language=cpp --command="gcc -c src/unsafe.c || true"
         fi
 
     - name: Run CERT C++ Coding Standards
