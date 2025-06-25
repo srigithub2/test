@@ -1,4 +1,4 @@
-name: "CodeQL – Coding‑Standards Only"
+name: "CodeQL – Coding-Standards Only"
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   coding-standards:
-    name: Coding‑Standards (CERT + AUTOSAR + MISRA‑C)
+    name: "Coding-Standards (CERT + AUTOSAR + MISRA-C)"
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
@@ -19,13 +19,23 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout workflow repo
+      # 1️⃣ Workflow repo (contains this YAML)
+      - name: "Checkout workflow repo"
         uses: actions/checkout@v4
         with:
           path: workflow-repo
           fetch-depth: 0
 
-      - name: Clone PR source repo
+      # 2️⃣ Clone the CodeQL Coding Standards packs
+      - name: "Checkout CodeQL Coding Standards"
+        uses: actions/checkout@v4
+        with:
+          repository: github/codeql-coding-standards
+          path: workflow-repo/codeql-coding-standards
+          fetch-depth: 1
+
+      # 3️⃣ Clone PR source repo (if PR)  ───────────────
+      - name: "Clone PR source repo"
         if: github.event_name == 'pull_request'
         run: |
           git clone --depth 1 "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
@@ -33,33 +43,40 @@ jobs:
           git fetch origin "${{ github.event.pull_request.head.sha }}"
           git checkout "${{ github.event.pull_request.head.sha }}"
 
+      # 4️⃣ Fallback for push events (same repo)
       - name: "Fallback: use current repo (push)"
         if: github.event_name != 'pull_request'
         run: |
           mkdir pr-code
           rsync -a --exclude .git ./ pr-code/
 
-      - name: Write CodeQL config
+      # 5️⃣ Minimal CodeQL config
+      - name: "Write CodeQL config"
         run: |
           mkdir -p pr-code/.github
-          echo "paths-ignore:" > pr-code/.github/codeql-config.yml
-          echo "  - third_party/**" >> pr-code/.github/codeql-config.yml
-          echo "  - generated/**" >> pr-code/.github/codeql-config.yml
+          {
+            echo "paths-ignore:"
+            echo "  - third_party/**"
+            echo "  - generated/**"
+          } > pr-code/.github/codeql-config.yml
 
-      - name: Init CodeQL
+      # 6️⃣ Initialize CodeQL
+      - name: "Init CodeQL"
         uses: github/codeql-action/init@v3
         with:
           languages: c-cpp
           config-file: pr-code/.github/codeql-config.yml
 
-      - name: Install coding-standards packs
+      # 7️⃣ Install local pack dependencies
+      - name: "Install coding-standards packs"
         run: |
-          cd workflow-repo/codeql-coding-standards/cpp/common/src && codeql pack install && cd -
-          cd workflow-repo/codeql-coding-standards/cpp/cert/src && codeql pack install && cd -
-          cd workflow-repo/codeql-coding-standards/cpp/autosar/src && codeql pack install && cd -
-          cd workflow-repo/codeql-coding-standards/c/misra/src && codeql pack install && cd -
+          cd workflow-repo/codeql-coding-standards/cpp/common/src   && codeql pack install && cd -
+          cd workflow-repo/codeql-coding-standards/cpp/cert/src     && codeql pack install && cd -
+          cd workflow-repo/codeql-coding-standards/cpp/autosar/src  && codeql pack install && cd -
+          cd workflow-repo/codeql-coding-standards/c/misra/src      && codeql pack install && cd -
 
-      - name: Build changed files
+      # 8️⃣ Build only changed source files (dummy fallback)
+      - name: "Build changed C/C++ files"
         working-directory: pr-code
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -69,8 +86,9 @@ jobs:
           else
             CHANGED=$(git ls-files '*.[ch]pp' '*.[ch]' || true)
           fi
+
           if [ -z "$CHANGED" ]; then
-            echo 'int main(){return 0;}' > dummy.cpp
+            echo 'int main(){ return 0; }' > dummy.cpp
             g++ -c dummy.cpp
             echo "BUILD_CMD=g++ -c dummy.cpp" >> $GITHUB_ENV
           else
@@ -78,7 +96,8 @@ jobs:
             echo "BUILD_CMD=g++ -c $CHANGED" >> $GITHUB_ENV
           fi
 
-      - name: Create CodeQL database
+      # 9️⃣ Create CodeQL database
+      - name: "Create CodeQL database"
         working-directory: pr-code
         run: |
           ${{ env.BUILD_CMD }}
@@ -86,7 +105,8 @@ jobs:
             --language=c-cpp \
             --command="${{ env.BUILD_CMD }}"
 
-      - name: Analyze coding-standards packs
+      # 🔟 Analyze with CERT, AUTOSAR, MISRA-C packs
+      - name: "Analyze coding-standards packs"
         working-directory: pr-code
         run: |
           codeql database analyze coding-standards-db \
@@ -97,18 +117,14 @@ jobs:
             --output=cert-results.sarif \
             --sarif-category=coding-standards
 
-      - name: Check SARIF exists
-        working-directory: pr-code
-        run: |
-          test -f cert-results.sarif && echo "SARIF ready." || (echo "SARIF missing!" && exit 1)
-
-      - name: Upload SARIF to Security Tab
+      # 11️⃣ Upload SARIF
+      - name: "Upload SARIF to Security Tab"
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: pr-code/cert-results.sarif
           category: coding-standards
 
-      - name: Upload SARIF artifact
+      - name: "Upload SARIF artifact"
         uses: actions/upload-artifact@v4
         with:
           name: coding-standards-sarif
