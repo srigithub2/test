@@ -45,12 +45,11 @@ jobs:
 
     - name: Create CodeQL Database
       run: |
-        cat <<'EOF' > main.cpp
-        int main() { return 0; }
-        EOF
+        echo 'int main() { return 0; }' > main.cpp
         g++ -c main.cpp
+        g++ -c violations.cpp      # ✅ ADD THIS LINE
         $CODEQL_CLI database create coding-standards-db \
-          --language=cpp --command="g++ -c main.cpp"
+          --language=cpp --command="g++ -c main.cpp violations.cpp"
 
     - name: Run SELECTED CERT Rules
       run: |
