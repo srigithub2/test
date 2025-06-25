@@ -134,23 +134,88 @@ jobs:
             
             # Get changed C/C++ files (limit to 100 for performance)
             CHANGED_FILES=$(git diff --name-only "$BASE" "$HEAD" | \
-              grep -E '\.(c|cpp|cc|cxx)$' | head -100 || true)
+              grep -E '\.(c|cpp|cc|cxx)
+
+      # 12️⃣ Create CodeQL database
+      - name: "Create CodeQL database"
+        working-directory: pr-code
+        run: |
+          # Check if we have actual object files from compilation
+          if ls *.o 2>/dev/null; then
+            echo "Found object files, using build command"
+            $CODEQL_CLI database create coding-standards-db \
+              --language=c-cpp \
+              --command="${{ env.BUILD_CMD }}" \
+              --overwrite
+          else
+            echo "No object files found, using source extraction"
+            $CODEQL_CLI database create coding-standards-db \
+              --language=c-cpp \
+              --source-root=. \
+              --overwrite
+          fi
+
+      # 13️⃣ Analyze with coding standards
+      - name: "Analyze coding-standards packs"
+        working-directory: pr-code
+        run: |
+          $CODEQL_CLI database analyze coding-standards-db \
+            ../workflow-repo/codeql-coding-standards/cpp/cert/src \
+            ../workflow-repo/codeql-coding-standards/cpp/autosar/src \
+            ../workflow-repo/codeql-coding-standards/c/misra/src \
+            --format=sarif-latest \
+            --output=cert-results.sarif \
+            --sarif-category=coding-standards \
+            --threads=$NPROC
+
+      # 14️⃣ Upload results
+      - name: "Upload SARIF to Security Tab"
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pr-code/cert-results.sarif
+          category: coding-standards
+
+      - name: "Upload SARIF artifact"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coding-standards-sarif
+          path: pr-code/cert-results.sarif
+
+      # 15️⃣ Show caching stats
+      - name: "Show compilation stats"
+        if: always()
+        run: |
+          ccache --show-stats || echo "ccache stats unavailable" | head -100 || true)
             
             if [ -n "$CHANGED_FILES" ]; then
               echo "Changed files: $CHANGED_FILES"
-              echo "$CHANGED_FILES" | xargs -P$NPROC -I {} bash -c 'ccache g++ -c {} -I. -std=c++17 -O0 || echo "Failed: {}"'
-              BUILD_CMD="echo 'Incremental build completed'"
+              for file in $CHANGED_FILES; do
+                if [ -f "$file" ]; then
+                  ccache g++ -c "$file" -I. -std=c++17 -O0 || echo "Failed to compile $file"
+                fi
+              done
+              BUILD_CMD="ccache g++ -c $CHANGED_FILES -I. -std=c++17 -O0"
             else
-              echo "No source files changed, using dummy"
+              echo "No source files changed, creating dummy"
               echo 'int main(){return 0;}' > dummy.cpp
               ccache g++ -c dummy.cpp
               BUILD_CMD="ccache g++ -c dummy.cpp"
             fi
           else
             # For push: sample compilation
-            find . -name "*.cpp" -o -name "*.c" | head -50 | \
-              xargs -P$NPROC -I {} bash -c 'ccache g++ -c {} -I. -std=c++17 -O0 || true'
-            BUILD_CMD="echo 'Sample build completed'"
+            SAMPLE_FILES=$(find . -name "*.cpp" -o -name "*.c" | head -10)
+            if [ -n "$SAMPLE_FILES" ]; then
+              for file in $SAMPLE_FILES; do
+                ccache g++ -c "$file" -I. -std=c++17 -O0 || echo "Failed to compile $file"
+              done
+              BUILD_CMD="ccache g++ -c $SAMPLE_FILES -I. -std=c++17 -O0"
+            else
+              echo 'int main(){return 0;}' > dummy.cpp
+              ccache g++ -c dummy.cpp
+              BUILD_CMD="ccache g++ -c dummy.cpp"
+            fi
           fi
           
           echo "BUILD_CMD=$BUILD_CMD" >> $GITHUB_ENV
@@ -159,17 +224,20 @@ jobs:
       - name: "Create CodeQL database"
         working-directory: pr-code
         run: |
-          $CODEQL_CLI database create coding-standards-db \
-            --language=c-cpp \
-            --command="${{ env.BUILD_CMD }}" \
-            --overwrite \
-            || {
-              echo "Database creation failed, trying extraction-only mode"
-              $CODEQL_CLI database create coding-standards-db \
-                --language=c-cpp \
-                --source-root=. \
-                --overwrite
-            }
+          # Check if we have actual object files from compilation
+          if ls *.o 2>/dev/null; then
+            echo "Found object files, using build command"
+            $CODEQL_CLI database create coding-standards-db \
+              --language=c-cpp \
+              --command="${{ env.BUILD_CMD }}" \
+              --overwrite
+          else
+            echo "No object files found, using source extraction"
+            $CODEQL_CLI database create coding-standards-db \
+              --language=c-cpp \
+              --source-root=. \
+              --overwrite
+          fi
 
       # 13️⃣ Analyze with coding standards
       - name: "Analyze coding-standards packs"
