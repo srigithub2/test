@@ -25,15 +25,16 @@ jobs:
         repository: github/codeql-coding-standards
         path: codeql-coding-standards
 
-    - name: Install CodeQL CLI
-      run: |
-        # Download and install CodeQL CLI
-        curl -L -o codeql-linux64.tar.gz "https://github.com/github/codeql-cli-binaries/releases/download/v2.22.0/codeql-linux64.tar.gz"
-        tar -xzf codeql-linux64.tar.gz
-        echo "$PWD/codeql" >> $GITHUB_PATH
+    - name: Initialize CodeQL (for CLI access only)
+      uses: github/codeql-action/init@v3
+      with:
+        languages: cpp
         
-        # Verify installation
-        ./codeql/codeql version
+    - name: Cancel CodeQL Analysis (we only want CLI)
+      run: |
+        # We just needed the init to get CodeQL CLI available
+        echo "CodeQL CLI is now available"
+        codeql version
 
     - name: Install Coding Standards Dependencies
       run: |
@@ -43,15 +44,16 @@ jobs:
 
     - name: Create CodeQL Database
       run: |
+        # Create our own database instead of using the one from init
         if [ -f "Makefile" ]; then
-          codeql database create codeql-db --language=cpp --command="make"
+          codeql database create coding-standards-db --language=cpp --command="make"
         else
-          codeql database create codeql-db --language=cpp --command="find . -name '*.c' -exec gcc -c {} \;"
+          codeql database create coding-standards-db --language=cpp --command="find . -name '*.c' -exec gcc -c {} \;"
         fi
 
     - name: Run CERT C++ Coding Standards
       run: |
-        codeql database analyze codeql-db \
+        codeql database analyze coding-standards-db \
           ./codeql-coding-standards/cpp/cert/src \
           --format=sarif-latest \
           --output=cert-results.sarif \
@@ -59,7 +61,7 @@ jobs:
 
     - name: Run AUTOSAR C++ Coding Standards
       run: |
-        codeql database analyze codeql-db \
+        codeql database analyze coding-standards-db \
           ./codeql-coding-standards/cpp/autosar/src \
           --format=sarif-latest \
           --output=autosar-results.sarif \
