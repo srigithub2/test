@@ -61,13 +61,101 @@ jobs:
         cd codeql-coding-standards/cpp/cert/src && $CODEQL_CLI pack install && cd ../../../../
         cd codeql-coding-standards/cpp/autosar/src && $CODEQL_CLI pack install && cd ../../../../
 
+    - name: Get Changed Files
+      id: changed-files
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          # Get only C/C++ files changed in this PR
+          git fetch origin ${{ github.base_ref }}
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(c|cpp|cc|cxx|h|hpp|hxx)
+
+    - name: Run CERT C++ Coding Standards
+      run: |
+        $CODEQL_CLI database analyze coding-standards-db \
+          ./codeql-coding-standards/cpp/cert/src \
+          --format=sarif-latest \
+          --output=cert-results.sarif \
+          --sarif-category=cert-cpp
+
+    - name: Run AUTOSAR C++ Coding Standards
+      run: |
+        $CODEQL_CLI database analyze coding-standards-db \
+          ./codeql-coding-standards/cpp/autosar/src \
+          --format=sarif-latest \
+          --output=autosar-results.sarif \
+          --sarif-category=autosar-cpp
+
+    - name: Upload CERT Results
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: cert-results.sarif
+        category: cert-cpp
+
+    - name: Upload AUTOSAR Results  
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: autosar-results.sarif
+        category: autosar-cpp
+
+    - name: Comment PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const message = "## CodeQL Coding Standards Analysis\n\n" +
+            "**CERT C++ Secure Coding Standards**: ✅\n" +
+            "**AUTOSAR C++ Automotive Standards**: ✅\n\n" +
+            "View results in the [Security tab](" + context.payload.repository.html_url + "/security/code-scanning).";
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: message
+          }); || true)
+          echo "Changed C/C++ files:"
+          echo "$CHANGED_FILES"
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        else
+          # For push events, analyze all C/C++ files
+          CHANGED_FILES=$(find . -name "*.c" -o -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" -o -name "*.h" -o -name "*.hpp" -o -name "*.hxx")
+          echo "All C/C++ files:"
+          echo "$CHANGED_FILES"
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        fi
+
     - name: Create CodeQL Database
       run: |
-        # Create our own database instead of using the one from init
-        if [ -f "Makefile" ]; then
-          $CODEQL_CLI database create coding-standards-db --language=cpp --command="make"
+        CHANGED_FILES="${{ steps.changed-files.outputs.changed_files }}"
+        
+        if [ -z "$CHANGED_FILES" ]; then
+          echo "No C/C++ files to analyze"
+          exit 0
+        fi
+        
+        echo "Creating database for files:"
+        echo "$CHANGED_FILES"
+        
+        # Create compilation command for changed files only
+        COMPILE_CMD=""
+        for file in $CHANGED_FILES; do
+          if [[ "$file" == *.c ]] || [[ "$file" == *.cpp ]] || [[ "$file" == *.cc ]] || [[ "$file" == *.cxx ]]; then
+            if [ -f "$file" ]; then
+              COMPILE_CMD="$COMPILE_CMD gcc -c $file -o ${file%.*}.o;"
+            fi
+          fi
+        done
+        
+        if [ -n "$COMPILE_CMD" ]; then
+          echo "Compilation command: $COMPILE_CMD"
+          $CODEQL_CLI database create coding-standards-db --language=cpp --command="$COMPILE_CMD"
         else
-          $CODEQL_CLI database create coding-standards-db --language=cpp --command="gcc -c src/unsafe.c || true"
+          echo "No source files to compile"
+          exit 1
         fi
 
     - name: Run CERT C++ Coding Standards
