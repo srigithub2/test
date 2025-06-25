@@ -31,25 +31,22 @@ jobs:
           languages: c-cpp
           queries: security-extended
 
-      - name: Build (fallback dummy)
+      - name: Build (dummy for extraction)
         run: |
           echo 'int main(){return 0;}' > dummy.cpp
           g++ -c dummy.cpp
 
-      - uses: github/codeql-action/analyze@v3
-        with: { category: sec-ext }
-
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/analyze@v3   # ← uploads SARIF automatically
         with:
           category: sec-ext
 
 # ───────────────────────────────────────────────────────────────
-#  JOB 2 ─ Full CERT + AUTOSAR (and optional MISRA-C)
+#  JOB 2 ─ Full CERT + AUTOSAR (+ MISRA-C)
 # ───────────────────────────────────────────────────────────────
   coding-standards:
     name: Coding-Standards (CERT + AUTOSAR + MISRA-C)
-    needs: security-extended            # drop this line if you want parallel
-    runs-on: ubuntu-latest              # switch to [self-hosted] for large builds
+    needs: security-extended            # remove if you prefer parallel
+    runs-on: ubuntu-latest              # self-hosted recommended for large builds
     timeout-minutes: 180
     permissions:
       security-events: write
@@ -57,7 +54,7 @@ jobs:
       contents: read
 
     steps:
-      # 1️⃣  Checkout **workflow repo** (contains this YAML and vendored packs)
+      # 1️⃣  Checkout workflow repo (contains this YAML & vendored packs)
       - uses: actions/checkout@v4
         with:
           path: workflow-repo
@@ -72,24 +69,22 @@ jobs:
           git fetch origin ${{ github.event.pull_request.head.sha }}
           git checkout     ${{ github.event.pull_request.head.sha }}
 
-      # Fallback if this is a push to same repo
-      - name: Clone current repo (push event)
+      # Fallback for push events (same repo)
+      - name: "Fallback: use current repo (push)"
         if: github.event_name != 'pull_request'
         run: |
           mkdir pr-code
           rsync -a --exclude .git ./ pr-code/
 
-      # 3️⃣  Minimal CodeQL config (ignore vendor etc.)
+      # 3️⃣  Minimal CodeQL config (ignore vendor/generated)
       - name: Write CodeQL config
         run: |
           mkdir -p pr-code/.github
-          cat <<'YML' > pr-code/.github/codeql-config.yml
-          paths-ignore:
-            - third_party/**
-            - generated/**
-          YML
+          echo "paths-ignore:"              >  pr-code/.github/codeql-config.yml
+          echo "  - third_party/**"         >> pr-code/.github/codeql-config.yml
+          echo "  - generated/**"           >> pr-code/.github/codeql-config.yml
 
-      # 4️⃣  Initialize CodeQL with CERT + AUTOSAR (+ MISRA-C)
+      # 4️⃣  Initialize CodeQL with full packs
       - name: Init CodeQL (coding-standards)
         uses: github/codeql-action/init@v3
         with:
@@ -98,16 +93,16 @@ jobs:
           packs: |
             github/codeql-coding-standards/cpp/cert
             github/codeql-coding-standards/cpp/autosar
-            github/codeql-coding-standards/c/misra  # remove if not needed
+            github/codeql-coding-standards/c/misra   # remove if you scan C++ only
 
-      # 5️⃣  Install vendored packs (once per runner cache)
+      # 5️⃣  Install pack dependencies (once per runner cache)
       - name: Install coding-standards packs
         run: |
           cd workflow-repo/codeql-coding-standards/cpp/common/src && codeql pack install && cd -
           cd workflow-repo/codeql-coding-standards/cpp/cert/src   && codeql pack install && cd -
           cd workflow-repo/codeql-coding-standards/c/misra/src    && codeql pack install && cd -
 
-      # 6️⃣  Build ONLY changed C/C++ files (or dummy)
+      # 6️⃣  Build only changed C/C++ files (dummy fallback)
       - name: Build changed files
         working-directory: pr-code
         run: |
@@ -118,19 +113,16 @@ jobs:
           else
             CHANGED=$(git ls-files '*.[ch]pp' '*.[ch]' || true)
           fi
-
           if [ -z "$CHANGED" ]; then
             echo 'int main(){return 0;}' > dummy.cpp
             g++ -c dummy.cpp
             echo "BUILD_CMD=g++ -c dummy.cpp" >> $GITHUB_ENV
           else
-            for f in $CHANGED; do
-              g++ -c "$f" || true
-            done
+            for f in $CHANGED; do g++ -c "$f" || true; done
             echo "BUILD_CMD=g++ -c $CHANGED" >> $GITHUB_ENV
           fi
 
-      # 7️⃣  Create CodeQL database from that build
+      # 7️⃣  Create CodeQL database
       - name: Create CodeQL database
         working-directory: pr-code
         run: |
@@ -139,8 +131,8 @@ jobs:
             --language=c-cpp \
             --command="${{ env.BUILD_CMD }}"
 
-      # 8️⃣  Analyze with full packs
-      - name: Analyze packs
+      # 8️⃣  Analyze with full packs (output SARIF)
+      - name: Analyze coding-standards packs
         working-directory: pr-code
         run: |
           codeql database analyze coding-standards-db \
