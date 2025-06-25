@@ -30,8 +30,8 @@ jobs:
         run: |
           git clone --depth 1 "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
           cd pr-code
-          git fetch origin ${{ github.event.pull_request.head.sha }}
-          git checkout ${{ github.event.pull_request.head.sha }}
+          git fetch origin "${{ github.event.pull_request.head.sha }}"
+          git checkout "${{ github.event.pull_request.head.sha }}"
 
       - name: Fallback: use current repo (push)
         if: github.event_name != 'pull_request'
@@ -63,8 +63,8 @@ jobs:
         working-directory: pr-code
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE=${{ github.event.pull_request.base.sha }}
-            HEAD=${{ github.event.pull_request.head.sha }}
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
             CHANGED=$(git diff --name-only "$BASE" "$HEAD" | grep -E '\.(c|cpp|cc|cxx|h|hpp|hxx)$' || true)
           else
             CHANGED=$(git ls-files '*.[ch]pp' '*.[ch]' || true)
