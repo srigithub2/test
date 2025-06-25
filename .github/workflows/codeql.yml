@@ -27,9 +27,13 @@ jobs:
 
     - name: Install CodeQL CLI
       run: |
-        wget -q https://github.com/github/codeql-cli-binaries/releases/latest/download/codeql-linux64.tar.gz
+        # Download and install CodeQL CLI
+        curl -L -o codeql-linux64.tar.gz "https://github.com/github/codeql-cli-binaries/releases/download/v2.22.0/codeql-linux64.tar.gz"
         tar -xzf codeql-linux64.tar.gz
         echo "$PWD/codeql" >> $GITHUB_PATH
+        
+        # Verify installation
+        ./codeql/codeql version
 
     - name: Install Coding Standards Dependencies
       run: |
