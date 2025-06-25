@@ -38,20 +38,17 @@ jobs:
         echo "$(dirname "$CODEQL_PATH")" >> "$GITHUB_PATH"
         echo "CODEQL_CLI=$CODEQL_PATH"   >> "$GITHUB_ENV"
 
-    - name: Install Coding-Standards packs
+    - name: Install Coding-Standards Packs
       run: |
         cd codeql-coding-standards/cpp/common/src   && $CODEQL_CLI pack install && cd -
         cd codeql-coding-standards/cpp/cert/src     && $CODEQL_CLI pack install && cd -
 
-    # ─────────────────────────────────────────────────────────────
-    # first build a 1-line C++ file, *then* create database
-    # ─────────────────────────────────────────────────────────────
     - name: Create CodeQL Database
       run: |
         cat <<'EOF' > main.cpp
         int main() { return 0; }
         EOF
-        g++ -c main.cpp                     # fast 1-file compile
+        g++ -c main.cpp
         $CODEQL_CLI database create coding-standards-db \
           --language=cpp --command="g++ -c main.cpp"
 
@@ -64,8 +61,14 @@ jobs:
           --output=cert-results.sarif \
           --sarif-category=cert-cpp
 
-    - name: Upload SARIF
+    - name: Upload SARIF to Security Tab
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: cert-results.sarif
         category: cert-cpp
+
+    - name: Upload SARIF as Downloadable Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cert-sarif
+        path: cert-results.sarif
