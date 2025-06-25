@@ -30,30 +30,49 @@ jobs:
       with:
         languages: cpp
         
-    - name: Cancel CodeQL Analysis (we only want CLI)
+    - name: Initialize CodeQL (for CLI access only)
+      uses: github/codeql-action/init@v3
+      with:
+        languages: cpp
+        
+    - name: Locate and setup CodeQL CLI
       run: |
-        # We just needed the init to get CodeQL CLI available
-        echo "CodeQL CLI is now available"
-        codeql version
+        # Find where CodeQL CLI is installed
+        CODEQL_PATH=$(find /opt/hostedtoolcache -name "codeql" -type f 2>/dev/null | head -1)
+        if [ -n "$CODEQL_PATH" ]; then
+          echo "Found CodeQL at: $CODEQL_PATH"
+          echo "$(dirname $CODEQL_PATH)" >> $GITHUB_PATH
+          echo "CODEQL_CLI=$(dirname $CODEQL_PATH)/codeql" >> $GITHUB_ENV
+        else
+          echo "CodeQL not found in hostedtoolcache, checking other locations..."
+          CODEQL_PATH=$(which codeql 2>/dev/null || find /usr -name "codeql" -type f 2>/dev/null | head -1)
+          if [ -n "$CODEQL_PATH" ]; then
+            echo "Found CodeQL at: $CODEQL_PATH"
+            echo "CODEQL_CLI=$CODEQL_PATH" >> $GITHUB_ENV
+          else
+            echo "CodeQL CLI not found"
+            exit 1
+          fi
+        fi
 
     - name: Install Coding Standards Dependencies
       run: |
-        cd codeql-coding-standards/cpp/common/src && codeql pack install && cd ../../../../
-        cd codeql-coding-standards/cpp/cert/src && codeql pack install && cd ../../../../
-        cd codeql-coding-standards/cpp/autosar/src && codeql pack install && cd ../../../../
+        cd codeql-coding-standards/cpp/common/src && $CODEQL_CLI pack install && cd ../../../../
+        cd codeql-coding-standards/cpp/cert/src && $CODEQL_CLI pack install && cd ../../../../
+        cd codeql-coding-standards/cpp/autosar/src && $CODEQL_CLI pack install && cd ../../../../
 
     - name: Create CodeQL Database
       run: |
         # Create our own database instead of using the one from init
         if [ -f "Makefile" ]; then
-          codeql database create coding-standards-db --language=cpp --command="make"
+          $CODEQL_CLI database create coding-standards-db --language=cpp --command="make"
         else
-          codeql database create coding-standards-db --language=cpp --command="find . -name '*.c' -exec gcc -c {} \;"
+          $CODEQL_CLI database create coding-standards-db --language=cpp --command="find . -name '*.c' -exec gcc -c {} \;"
         fi
 
     - name: Run CERT C++ Coding Standards
       run: |
-        codeql database analyze coding-standards-db \
+        $CODEQL_CLI database analyze coding-standards-db \
           ./codeql-coding-standards/cpp/cert/src \
           --format=sarif-latest \
           --output=cert-results.sarif \
@@ -61,7 +80,7 @@ jobs:
 
     - name: Run AUTOSAR C++ Coding Standards
       run: |
-        codeql database analyze coding-standards-db \
+        $CODEQL_CLI database analyze coding-standards-db \
           ./codeql-coding-standards/cpp/autosar/src \
           --format=sarif-latest \
           --output=autosar-results.sarif \
