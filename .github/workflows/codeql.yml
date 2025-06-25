@@ -59,6 +59,9 @@ jobs:
         $CODEQL_CLI database analyze coding-standards-db \
           ./codeql-coding-standards/cpp/cert/src/rules/ERR51-CPP/HandleAllExceptions.ql \
           ./codeql-coding-standards/cpp/cert/src/rules/ERR53-CPP/DestroyedValueReferencedInConstructorDestructorCatchBlock.ql \
+          ./codeql-coding-standards/cpp/cert/src/rules/DCL30-CPP/UseOfUninitializedVariable.ql \
+          ./codeql-coding-standards/cpp/cert/src/rules/DCL59-CPP/UninitializedPointerDereference.ql
+
           --format=sarif-latest \
           --output=cert-results.sarif \
           --sarif-category=cert-cpp
