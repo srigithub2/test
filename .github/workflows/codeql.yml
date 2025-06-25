@@ -8,9 +8,6 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
-# ───────────────────────────────────────────────────────────────
-#  JOB 1 ─ Fast PR scan (security-extended)
-# ───────────────────────────────────────────────────────────────
 jobs:
   security-extended:
     name: Security-Extended (fast)
@@ -36,17 +33,14 @@ jobs:
           echo 'int main(){return 0;}' > dummy.cpp
           g++ -c dummy.cpp
 
-      - uses: github/codeql-action/analyze@v3   # ← uploads SARIF automatically
+      - uses: github/codeql-action/analyze@v3
         with:
           category: sec-ext
 
-# ───────────────────────────────────────────────────────────────
-#  JOB 2 ─ Full CERT + AUTOSAR (+ MISRA-C)
-# ───────────────────────────────────────────────────────────────
   coding-standards:
     name: Coding-Standards (CERT + AUTOSAR + MISRA-C)
-    needs: security-extended            # remove if you prefer parallel
-    runs-on: ubuntu-latest              # self-hosted recommended for large builds
+    needs: security-extended
+    runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
       security-events: write
@@ -54,13 +48,11 @@ jobs:
       contents: read
 
     steps:
-      # 1️⃣  Checkout workflow repo (contains this YAML & vendored packs)
       - uses: actions/checkout@v4
         with:
           path: workflow-repo
           fetch-depth: 0
 
-      # 2️⃣  Clone PR source repo & checkout HEAD SHA
       - name: Clone PR source
         if: github.event_name == 'pull_request'
         run: |
@@ -69,14 +61,12 @@ jobs:
           git fetch origin ${{ github.event.pull_request.head.sha }}
           git checkout     ${{ github.event.pull_request.head.sha }}
 
-      # Fallback for push events (same repo)
       - name: "Fallback: use current repo (push)"
         if: github.event_name != 'pull_request'
         run: |
           mkdir pr-code
           rsync -a --exclude .git ./ pr-code/
 
-      # 3️⃣  Minimal CodeQL config (ignore vendor/generated)
       - name: Write CodeQL config
         run: |
           mkdir -p pr-code/.github
@@ -84,7 +74,6 @@ jobs:
           echo "  - third_party/**"         >> pr-code/.github/codeql-config.yml
           echo "  - generated/**"           >> pr-code/.github/codeql-config.yml
 
-      # 4️⃣  Initialize CodeQL with full packs
       - name: Init CodeQL (coding-standards)
         uses: github/codeql-action/init@v3
         with:
@@ -93,23 +82,21 @@ jobs:
           packs: |
             github/codeql-coding-standards/cpp/cert
             github/codeql-coding-standards/cpp/autosar
-            github/codeql-coding-standards/c/misra   # remove if you scan C++ only
+            github/codeql-coding-standards/c/misra
 
-      # 5️⃣  Install pack dependencies (once per runner cache)
       - name: Install coding-standards packs
         run: |
           cd workflow-repo/codeql-coding-standards/cpp/common/src && codeql pack install && cd -
           cd workflow-repo/codeql-coding-standards/cpp/cert/src   && codeql pack install && cd -
           cd workflow-repo/codeql-coding-standards/c/misra/src    && codeql pack install && cd -
 
-      # 6️⃣  Build only changed C/C++ files (dummy fallback)
       - name: Build changed files
         working-directory: pr-code
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE=${{ github.event.pull_request.base.sha }}
             HEAD=${{ github.event.pull_request.head.sha }}
-            CHANGED=$(git diff --name-only "$BASE" "$HEAD" | grep -E '\.(c|cpp|cc|cxx|h|hpp|hxx)$' || true)
+            CHANGED=$(git diff --name-only "$BASE" "$HEAD" | grep -E '\\.(c|cpp|cc|cxx|h|hpp|hxx)$' || true)
           else
             CHANGED=$(git ls-files '*.[ch]pp' '*.[ch]' || true)
           fi
@@ -122,7 +109,6 @@ jobs:
             echo "BUILD_CMD=g++ -c $CHANGED" >> $GITHUB_ENV
           fi
 
-      # 7️⃣  Create CodeQL database
       - name: Create CodeQL database
         working-directory: pr-code
         run: |
@@ -131,7 +117,6 @@ jobs:
             --language=c-cpp \
             --command="${{ env.BUILD_CMD }}"
 
-      # 8️⃣  Analyze with full packs (output SARIF)
       - name: Analyze coding-standards packs
         working-directory: pr-code
         run: |
@@ -140,13 +125,19 @@ jobs:
             --output=cert-results.sarif \
             --sarif-category=coding-standards
 
-      # 9️⃣  Upload SARIF
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Check SARIF exists
+        working-directory: pr-code
+        run: |
+          test -f cert-results.sarif && echo "SARIF ready." || (echo "SARIF missing!" && exit 1)
+
+      - name: Upload SARIF to Security Tab
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: pr-code/cert-results.sarif
           category: coding-standards
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload SARIF artifact
+        uses: actions/upload-artifact@v4
         with:
           name: coding-standards-sarif
           path: pr-code/cert-results.sarif
