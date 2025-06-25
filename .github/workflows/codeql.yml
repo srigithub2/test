@@ -75,11 +75,9 @@ jobs:
           
           if (codeqlCheck) {
             const message = `## CodeQL Coding Standards Analysis
-
-**Status**: ${codeqlCheck.conclusion || 'In Progress'}
-**Language**: C/C++
-
-View detailed results in the [Security tab](${context.payload.repository.html_url}/security/code-scanning).`;
+            **Status**: ${codeqlCheck.conclusion || 'In Progress'}
+            **Language**: C/C++
+            View detailed results in the [Security tab](${context.payload.repository.html_url}/security/code-scanning).`;
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,
