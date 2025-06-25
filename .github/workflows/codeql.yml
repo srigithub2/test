@@ -25,20 +25,32 @@ jobs:
         repository: github/codeql-coding-standards
         path: codeql-coding-standards
 
+    - name: Setup CodeQL CLI
+      uses: github/codeql-action/setup@v3
+      
+    - name: Install CodeQL pack dependencies
+      run: |
+        # Install dependencies first
+        cd codeql-coding-standards/cpp/common/src && codeql pack install
+        cd ../../../cpp/cert/src && codeql pack install  
+        cd ../../../cpp/autosar/src && codeql pack install
+        cd ../../../../
+
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: cpp
-        # Use the src directories as query packs
+        # Use absolute paths to the query packs
         queries: |
-          ./codeql-coding-standards/cpp/cert/src
-          ./codeql-coding-standards/cpp/autosar/src
-
-    - name: Install CodeQL pack dependencies
-      run: |
-        codeql pack install ./codeql-coding-standards/cpp/cert/src/
-        codeql pack install ./codeql-coding-standards/cpp/autosar/src/
-        codeql pack install ./codeql-coding-standards/cpp/common/src/
+          ${{ github.workspace }}/codeql-coding-standards/cpp/cert/src
+          ${{ github.workspace }}/codeql-coding-standards/cpp/autosar/src
+        config: |
+          paths:
+            - src
+          paths-ignore:
+            - node_modules
+            - "**/*.js"
+            - "**/*.py"
 
     # Build C/C++ files
     - name: Build C files
@@ -74,12 +86,10 @@ jobs:
           );
           
           if (codeqlCheck) {
-            const message = `## CodeQL Coding Standards Analysis
-
-**Status**: ${codeqlCheck.conclusion || 'In Progress'}
-**Language**: C/C++
-
-View detailed results in the [Security tab](${context.payload.repository.html_url}/security/code-scanning).`;
+            const message = "## CodeQL Coding Standards Analysis\n\n" +
+              "**Status**: " + (codeqlCheck.conclusion || 'In Progress') + "\n" +
+              "**Language**: C/C++\n\n" +
+              "View detailed results in the [Security tab](" + context.payload.repository.html_url + "/security/code-scanning).";
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,
