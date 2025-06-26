@@ -134,28 +134,35 @@ jobs:
           fi
           echo "Compile finished."
 
+      - name: Write build script for CodeQL
+        working-directory: pr-code
+        run: |
+          cat > build-all.sh <<'EOF'
+          #!/bin/bash
+          set -e
+          mkdir -p build
+          cpp_files=$(find . -name "*.cpp" ! -path "*/codeql-coding-standards/*" ! -path "*/workflow-repo/*")
+          c_files=$(find . -name "*.c" ! -path "*/codeql-coding-standards/*" ! -path "*/workflow-repo/*")
+          for file in $cpp_files; do
+            $CXX -c "$file" -o "build/$(basename "$file").o"
+          done
+          for file in $c_files; do
+            $CC -c "$file" -o "build/$(basename "$file").o"
+          done
+          EOF
+          chmod +x build-all.sh
+
 
       - name: Create CodeQL database
         working-directory: pr-code
         run: |
           CODEQL=$(find /Users/runner/hostedtoolcache/CodeQL -type f -name codeql | head -n1)
           if [ -z "$CODEQL" ]; then echo "CodeQL CLI not found!"; exit 1; fi
-
-          BUILD_CMD='
-          mkdir -p build
-          cpp_files=$(find . -name "*.cpp" ! -path "*/codeql-coding-standards/*" ! -path "*/workflow-repo/*")
-          c_files=$(find . -name "*.c" ! -path "*/codeql-coding-standards/*" ! -path "*/workflow-repo/*")
-          for file in $cpp_files; do
-            $CXX -c "$file" -o "build/$(basename "$file").o" || exit 1
-          done
-          for file in $c_files; do
-            $CC -c "$file" -o "build/$(basename "$file").o" || exit 1
-          done
-          '
           "$CODEQL" database create coding-standards-db \
             --language=c-cpp \
-            --command="bash -c '$BUILD_CMD'" \
+            --command="./build-all.sh" \
             --overwrite
+
 
 
 
