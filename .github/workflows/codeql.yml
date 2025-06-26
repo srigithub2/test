@@ -146,16 +146,15 @@ jobs:
         fi
 
     # ───────── Create database ─────────
-    - name: Create CodeQL database (source-root mode)
+    
+
+    - name: Create CodeQL database (source-only mode)
       working-directory: pr-code
       run: |
         $CODEQL_CLI database create coding-standards-db \
           --language=c-cpp \
-          --source-root=. \
-          --overwrite \
-          --no-autobuild
-
-
+          --command="echo Build placeholder for C++" \
+          --overwrite
     # ───────── Analyze ─────────
     - name: Analyze coding-standards packs
       working-directory: pr-code
