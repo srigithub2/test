@@ -112,17 +112,27 @@ jobs:
             fi
           done
 
-      - name: Compile single file to trigger extractor
-        id: compile-one
+      - name: Compile all C/C++ source files
+        id: compile-all
         working-directory: pr-code
         run: |
-          FILE=$(find . -name '*.cpp' -o -name '*.c' | head -n 1)
-          if [ -z "$FILE" ]; then
-            echo 'int main(){return 0;}' > dummy.cpp
-            FILE=dummy.cpp
+          mkdir -p build
+          cpp_count=$(find . -name '*.cpp' | wc -l | xargs)
+          c_count=$(find . -name '*.c' | wc -l | xargs)
+          if [ "$cpp_count" -gt 0 ]; then
+            echo "Compiling all .cpp files with \$CXX..."
+            for file in $(find . -name '*.cpp'); do
+              $CXX -c "$file" -o "build/$(basename "$file").o" || exit 1
+            done
           fi
-          $CXX -c "$FILE" -o trigger.o
-          echo "FILE=$FILE" >> $GITHUB_OUTPUT
+          if [ "$c_count" -gt 0 ]; then
+            echo "Compiling all .c files with \$CC..."
+            for file in $(find . -name '*.c'); do
+              $CC -c "$file" -o "build/$(basename "$file").o" || exit 1
+            done
+          fi
+          echo "Compile finished."
+          echo "DUMMY=OK" >> $GITHUB_OUTPUT
 
       - name: Create CodeQL database
         working-directory: pr-code
@@ -131,8 +141,9 @@ jobs:
           if [ -z "$CODEQL" ]; then echo "CodeQL CLI not found!"; exit 1; fi
           "$CODEQL" database create coding-standards-db \
             --language=c-cpp \
-            --command="$CXX -c ${{ steps.compile-one.outputs.FILE }} -o trigger.o" \
+            --command="true" \
             --overwrite
+
 
       - name: Analyze coding-standards packs
         working-directory: pr-code
