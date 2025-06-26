@@ -11,7 +11,7 @@ on:
 jobs:
   coding-standards:
     name: "Coding-Standards (CERT, AUTOSAR, MISRA)"
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 60
     permissions:
       security-events: write
@@ -49,7 +49,7 @@ jobs:
         git clone --depth 1 "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
         cd pr-code
         git fetch origin "${{ github.event.pull_request.head.sha }}"
-        git checkout       "${{ github.event.pull_request.head.sha }}"
+        git checkout "${{ github.event.pull_request.head.sha }}"
 
     - name: "Fallback: use current repo (push)"
       if: github.event_name != 'pull_request'
@@ -69,9 +69,16 @@ jobs:
 
     - name: Setup ccache
       run: |
-        sudo apt-get update -y && sudo apt-get install -y ccache
-        echo "CC='ccache gcc'"  >> $GITHUB_ENV
-        echo "CXX='ccache g++'" >> $GITHUB_ENV
+        if [[ "$(uname)" == "Darwin" ]]; then
+          brew update
+          brew install ccache
+          echo "CC='ccache clang'"  >> $GITHUB_ENV
+          echo "CXX='ccache clang++'" >> $GITHUB_ENV
+        else
+          sudo apt-get update -y && sudo apt-get install -y ccache
+          echo "CC='ccache gcc'"  >> $GITHUB_ENV
+          echo "CXX='ccache g++'" >> $GITHUB_ENV
+        fi
         ccache --set-config=max_size=1G
         ccache --zero-stats
 
@@ -128,7 +135,7 @@ jobs:
           echo 'int main(){return 0;}' > dummy.cpp
           FILE=dummy.cpp
         fi
-        g++ -c "$FILE" -o trigger.o
+        $CXX -c "$FILE" -o trigger.o
         echo "FILE=$FILE" >> $GITHUB_OUTPUT
 
     - name: "Create CodeQL database"
@@ -136,7 +143,7 @@ jobs:
       run: |
         $CODEQL_CLI database create coding-standards-db \
           --language=c-cpp \
-          --command="g++ -c ${{ steps.compile-one.outputs.FILE }} -o trigger.o" \
+          --command="$CXX -c ${{ steps.compile-one.outputs.FILE }} -o trigger.o" \
           --overwrite
 
     # ───────── Analyze ─────────
@@ -149,7 +156,7 @@ jobs:
           ../workflow-repo/codeql-coding-standards/c/misra/src \
           --format=sarif-latest \
           --output=cert-results.sarif \
-          --threads=$(nproc) \
+          --threads=$(sysctl -n hw.ncpu) \
           --sarif-category=coding-standards
 
     # ───────── Upload results ─────────
