@@ -90,6 +90,7 @@ jobs:
           - build/**
           - '**/test/**'
       - name: Init CodeQL
+        id: init-codeql
         uses: github/codeql-action/init@v3
         with:
           languages: c-cpp
@@ -97,7 +98,7 @@ jobs:
 
       - name: Install coding-standards packs
         run: |
-          CODEQL="$(which codeql || echo $CODEQL_PATH/codeql)"
+          CODEQL="${{ steps.init-codeql.outputs.codeql-path }}"
           for dir in \
             workflow-repo/codeql-coding-standards/cpp/common/src \
             workflow-repo/codeql-coding-standards/cpp/cert/src \
@@ -105,7 +106,7 @@ jobs:
             workflow-repo/codeql-coding-standards/c/misra/src; do
             if [ -f "$dir/qlpack.yml" ]; then
               echo "Installing $dir"
-              $CODEQL pack install "$dir"
+              "$CODEQL" pack install "$dir"
             fi
           done
 
