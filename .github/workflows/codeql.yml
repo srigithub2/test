@@ -3,7 +3,7 @@ name: "CodeQL – C & C++ Coding-Standards Only (Optimized)"
 on:
   pull_request:
     branches: [ "main", "master" ]
-    types:  [ opened, synchronize, reopened ]
+    types: [ opened, synchronize, reopened ]
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
@@ -19,13 +19,12 @@ jobs:
       contents: read
 
     steps:
-      # ───────── 1. Checkout your code (PR or push) ─────────
+      # ───────── 1. Checkout source ─────────
       - name: Checkout source
         uses: actions/checkout@v4
         with:
           path: pr-code
           fetch-depth: 0
-          # For PRs, checkout the head SHA
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       # ───────── 2. Cache & setup ccache ─────────
@@ -59,15 +58,16 @@ jobs:
             echo "  - '**/test/**'"
           } > pr-code/.github/codeql-config.yml
 
-      # ───────── 4. Init CodeQL with pre-compiled packs ─────────
+      # ───────── 4. Init CodeQL with pre-compiled v2.47.0 pack ─────────
       - name: Init CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: c-cpp
           config-file: pr-code/.github/codeql-config.yml
-          packs: github/codeql-coding-standards/cpp/common@latest,github/codeql-coding-standards/cpp/cert@latest,github/codeql-coding-standards/cpp/autosar@latest,github/codeql-coding-standards/c/misra@latest
+          packs: github/codeql-coding-standards@v2.47.0
+      # This downloads the v2.47.0 pack and its QL bytecode—no source compile needed :contentReference[oaicite:0]{index=0}:contentReference[oaicite:1]{index=1}
 
-      # ───────── 5. Create DB (no C/C++ compile) ─────────
+      # ───────── 5. Create DB (skip any C/C++ compile) ─────────
       - name: Create CodeQL database
         working-directory: pr-code
         run: |
