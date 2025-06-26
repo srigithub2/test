@@ -83,13 +83,12 @@ jobs:
         run: |
           mkdir -p pr-code/.github
           cat > pr-code/.github/codeql-config.yml <<EOF
-paths-ignore:
-  - third_party/**
-  - generated/**
-  - vendor/**
-  - build/**
-  - '**/test/**'
-EOF
+          paths-ignore:
+          - third_party/**
+          - generated/**
+          - vendor/**
+          - build/**
+          - '**/test/**'
 
       - name: Init CodeQL
         id: init-codeql
