@@ -10,7 +10,7 @@ public:
             throw std::runtime_error("ERR51: unhandled exception");   // triggers ERR51-CPP
     }
 
-    ~Unsafe() noexcept {         // Destructor references deleted memory
+    ~Unsafe() {                  // Removed noexcept for clang compatibility
         delete p;
         int x = *p;              // ERR53-CPP: value referenced after destruction
         (void)x;
