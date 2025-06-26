@@ -98,16 +98,14 @@ jobs:
       - name: Install coding-standards packs
         run: |
           for dir in \
-            workflow-repo/codeql-coding-standards/cpp/common/src \
-            workflow-repo/codeql-coding-standards/cpp/cert/src \
-            workflow-repo/codeql-coding-standards/cpp/autosar/src \
-            workflow-repo/codeql-coding-standards/c/misra/src; do
-            if [ -f "$dir/qlpack.yml" ]; then
-              echo "Installing $dir"
-              cd "$dir"
-              codeql pack install
-              cd -
-            fi
+          workflow-repo/codeql-coding-standards/cpp/common/src \
+          workflow-repo/codeql-coding-standards/cpp/cert/src \
+          workflow-repo/codeql-coding-standards/cpp/autosar/src \
+          workflow-repo/codeql-coding-standards/c/misra/src; do
+          if [ -f "$dir/qlpack.yml" ]; then
+            echo "Installing $dir"
+            codeql pack install "$dir"
+          fi
           done
 
       - name: Compile single file to trigger extractor
