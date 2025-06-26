@@ -103,13 +103,13 @@ jobs:
     - name: "Install coding-standards packs"
       run: |
         for dir in \
-          workflow-repo/codeql-coding-standards/cpp/common/src \
-          workflow-repo/codeql-coding-standards/cpp/cert/src   \
-          workflow-repo/codeql-coding-standards/cpp/autosar/src\
-          workflow-repo/codeql-coding-standards/cpp/misra/src  \
-          workflow-repo/codeql-coding-standards/c/common/src   \
-          workflow-repo/codeql-coding-standards/c/cert/src     \
-          workflow-repo/codeql-coding-standards/c/misra/src
+          workflow-repo/codeql-coding-standards/cpp/common \
+          workflow-repo/codeql-coding-standards/cpp/cert \
+          workflow-repo/codeql-coding-standards/cpp/autosar \
+          workflow-repo/codeql-coding-standards/cpp/misra \
+          workflow-repo/codeql-coding-standards/c/common \
+          workflow-repo/codeql-coding-standards/c/cert \
+          workflow-repo/codeql-coding-standards/c/misra
         do
           echo "🛠  Installing $dir"
           cd "$dir"
@@ -143,13 +143,11 @@ jobs:
       working-directory: pr-code
       run: |
         $CODEQL_CLI database analyze coding-standards-db \
-          ../workflow-repo/codeql-coding-standards/cpp/common/src \
-          ../workflow-repo/codeql-coding-standards/cpp/cert/src   \
-          ../workflow-repo/codeql-coding-standards/cpp/autosar/src\
-          ../workflow-repo/codeql-coding-standards/cpp/misra/src  \
-          ../workflow-repo/codeql-coding-standards/c/common/src   \
-          ../workflow-repo/codeql-coding-standards/c/cert/src     \
-          ../workflow-repo/codeql-coding-standards/c/misra/src    \
+          ../workflow-repo/codeql-coding-standards/cpp/cert \
+          ../workflow-repo/codeql-coding-standards/cpp/autosar \
+          ../workflow-repo/codeql-coding-standards/cpp/misra \
+          ../workflow-repo/codeql-coding-standards/c/cert \
+          ../workflow-repo/codeql-coding-standards/c/misra \
           --format=sarif-latest \
           --output=cert-results.sarif \
           --threads=$(nproc) \
