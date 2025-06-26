@@ -3,7 +3,7 @@ name: "CodeQL – C & C++ Coding-Standards Only (Optimized)"
 on:
   pull_request:
     branches: [ "main", "master" ]
-    types: [ opened, synchronize, reopened ]
+    types:  [ opened, synchronize, reopened ]
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
@@ -19,22 +19,16 @@ jobs:
       contents: read
 
     steps:
-      # ───────── Source checkout ─────────
-      - name: "Clone PR source repo"
-        if: github.event_name == 'pull_request'
-        run: |
-          git clone --depth 1 "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
-          cd pr-code
-          git fetch origin "${{ github.event.pull_request.head.sha }}"
-          git checkout "${{ github.event.pull_request.head.sha }}"
+      # ───────── 1. Checkout your code (PR or push) ─────────
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          path: pr-code
+          fetch-depth: 0
+          # For PRs, checkout the head SHA
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: "Fallback: use current repo (push)"
-        if: github.event_name != 'pull_request'
-        run: |
-          mkdir pr-code
-          rsync -a --exclude .git ./ pr-code/
-
-      # ───────── Build cache & ccache ─────────
+      # ───────── 2. Cache & setup ccache ─────────
       - name: Cache build objects
         uses: actions/cache@v4
         with:
@@ -52,7 +46,7 @@ jobs:
           ccache --set-config=max_size=1G
           ccache --zero-stats
 
-      # ───────── CodeQL config & init ─────────
+      # ───────── 3. Write CodeQL config ─────────
       - name: Write CodeQL config
         run: |
           mkdir -p pr-code/.github
@@ -65,18 +59,15 @@ jobs:
             echo "  - '**/test/**'"
           } > pr-code/.github/codeql-config.yml
 
+      # ───────── 4. Init CodeQL with pre-compiled packs ─────────
       - name: Init CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: c-cpp
           config-file: pr-code/.github/codeql-config.yml
-          packs: |
-            github/codeql-coding-standards/cpp/common@latest
-            github/codeql-coding-standards/cpp/cert@latest
-            github/codeql-coding-standards/cpp/autosar@latest
-            github/codeql-coding-standards/c/misra@latest
+          packs: github/codeql-coding-standards/cpp/common@latest,github/codeql-coding-standards/cpp/cert@latest,github/codeql-coding-standards/cpp/autosar@latest,github/codeql-coding-standards/c/misra@latest
 
-      # ───────── Create CodeQL database (no compilation) ─────────
+      # ───────── 5. Create DB (no C/C++ compile) ─────────
       - name: Create CodeQL database
         working-directory: pr-code
         run: |
@@ -85,7 +76,7 @@ jobs:
             --build-mode=none \
             --overwrite
 
-      # ───────── Analyze (pre-compiled packs, valid inputs only) ─────────
+      # ───────── 6. Analyze (uses the packs from init) ─────────
       - name: Analyze coding-standards packs
         uses: github/codeql-action/analyze@v3
         with:
@@ -95,7 +86,7 @@ jobs:
           threads: ${{ runner.processor_count }}
           upload: false
 
-      # ───────── Upload results ─────────
+      # ───────── 7. Upload results ─────────
       - name: Upload SARIF to Security Tab
         uses: github/codeql-action/upload-sarif@v3
         with:
