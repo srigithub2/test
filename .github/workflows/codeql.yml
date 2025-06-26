@@ -98,7 +98,8 @@ jobs:
 
       - name: Install coding-standards packs
         run: |
-          CODEQL="${{ steps.init-codeql.outputs.codeql-path }}"
+          CODEQL=$(find /Users/runner/hostedtoolcache/CodeQL -type f -name codeql | head -n1)
+          if [ -z "$CODEQL" ]; then echo "CodeQL CLI not found!"; exit 1; fi
           for dir in \
             workflow-repo/codeql-coding-standards/cpp/common/src \
             workflow-repo/codeql-coding-standards/cpp/cert/src \
