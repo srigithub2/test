@@ -103,18 +103,19 @@ jobs:
     - name: "Install coding-standards packs"
       run: |
         for dir in \
-          workflow-repo/codeql-coding-standards/cpp/common \
-          workflow-repo/codeql-coding-standards/cpp/cert \
-          workflow-repo/codeql-coding-standards/cpp/autosar \
-          workflow-repo/codeql-coding-standards/cpp/misra \
-          workflow-repo/codeql-coding-standards/c/common \
-          workflow-repo/codeql-coding-standards/c/cert \
-          workflow-repo/codeql-coding-standards/c/misra
+          workflow-repo/codeql-coding-standards/cpp/common/src \
+          workflow-repo/codeql-coding-standards/cpp/cert/src \
+          workflow-repo/codeql-coding-standards/cpp/autosar/src \
+          workflow-repo/codeql-coding-standards/c/misra/src
         do
-          echo "🛠  Installing $dir"
-          cd "$dir"
-          $CODEQL_CLI pack install
-          cd -
+          if [ -f "$dir/qlpack.yml" ]; then
+            echo "🛠  Installing $dir"
+            cd "$dir"
+            $CODEQL_CLI pack install
+            cd -
+          else
+            echo "⚠️  Skipping $dir (no qlpack.yml found)"
+          fi
         done
 
     # ───────── Compile one file & create DB ─────────
@@ -143,11 +144,9 @@ jobs:
       working-directory: pr-code
       run: |
         $CODEQL_CLI database analyze coding-standards-db \
-          ../workflow-repo/codeql-coding-standards/cpp/cert \
-          ../workflow-repo/codeql-coding-standards/cpp/autosar \
-          ../workflow-repo/codeql-coding-standards/cpp/misra \
-          ../workflow-repo/codeql-coding-standards/c/cert \
-          ../workflow-repo/codeql-coding-standards/c/misra \
+          ../workflow-repo/codeql-coding-standards/cpp/cert/src \
+          ../workflow-repo/codeql-coding-standards/cpp/autosar/src \
+          ../workflow-repo/codeql-coding-standards/c/misra/src \
           --format=sarif-latest \
           --output=cert-results.sarif \
           --threads=$(nproc) \
