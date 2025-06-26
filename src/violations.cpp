@@ -15,7 +15,7 @@ public:
         int x = *p;              // ERR53-CPP: value referenced after destruction
         (void)x;
     }
-};
+};//TEST
 
 int main() {
     try {
