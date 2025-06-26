@@ -114,25 +114,23 @@ jobs:
 
       - name: Compile all C/C++ source files
         id: compile-all
-        working-directory: pr-code
         run: |
           mkdir -p build
-          cpp_count=$(find . -name '*.cpp' | wc -l | xargs)
-          c_count=$(find . -name '*.c' | wc -l | xargs)
+          cpp_count=$(find pr-code -name '*.cpp' | wc -l | xargs)
+          c_count=$(find pr-code -name '*.c' | wc -l | xargs)
           if [ "$cpp_count" -gt 0 ]; then
             echo "Compiling all .cpp files with \$CXX..."
-            for file in $(find . -name '*.cpp'); do
+            for file in $(find pr-code -name '*.cpp'); do
               $CXX -c "$file" -o "build/$(basename "$file").o" || exit 1
             done
           fi
           if [ "$c_count" -gt 0 ]; then
             echo "Compiling all .c files with \$CC..."
-            for file in $(find . -name '*.c'); do
+            for file in $(find pr-code -name '*.c'); do
               $CC -c "$file" -o "build/$(basename "$file").o" || exit 1
             done
           fi
           echo "Compile finished."
-          echo "DUMMY=OK" >> $GITHUB_OUTPUT
 
       - name: Create CodeQL database
         working-directory: pr-code
