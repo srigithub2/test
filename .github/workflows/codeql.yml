@@ -95,7 +95,9 @@ jobs:
         config-file: pr-code/.github/codeql-config.yml
 
     - name: Locate CodeQL CLI
-      run: echo "CODEQL_CLI=$(which codeql)" >> $GITHUB_ENV
+      run: |
+        CODEQL_CLI=$(which codeql || find /opt/hostedtoolcache -type f -name codeql | head -n 1)
+        echo "CODEQL_CLI=$CODEQL_CLI" >> $GITHUB_ENV
 
     # ───────── Install selected packs ─────────
     - name: "Install coding-standards packs"
@@ -110,7 +112,9 @@ jobs:
           workflow-repo/codeql-coding-standards/c/misra/src
         do
           echo "🛠  Installing $dir"
-          $CODEQL_CLI pack install "$dir"
+          cd "$dir"
+          $CODEQL_CLI pack install
+          cd -
         done
 
     # ───────── Compile one file & create DB ─────────
