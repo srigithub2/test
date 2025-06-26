@@ -116,21 +116,24 @@ jobs:
         id: compile-all
         run: |
           mkdir -p build
-          cpp_count=$(find pr-code -name '*.cpp' | wc -l | xargs)
-          c_count=$(find pr-code -name '*.c' | wc -l | xargs)
+          cpp_files=$(find pr-code -name '*.cpp' ! -path '*/codeql-coding-standards/*' ! -path '*/workflow-repo/*')
+          c_files=$(find pr-code -name '*.c' ! -path '*/codeql-coding-standards/*' ! -path '*/workflow-repo/*')
+          cpp_count=$(echo "$cpp_files" | wc -w | xargs)
+          c_count=$(echo "$c_files" | wc -w | xargs)
           if [ "$cpp_count" -gt 0 ]; then
             echo "Compiling all .cpp files with \$CXX..."
-            for file in $(find pr-code -name '*.cpp'); do
+            for file in $cpp_files; do
               $CXX -c "$file" -o "build/$(basename "$file").o" || exit 1
             done
           fi
           if [ "$c_count" -gt 0 ]; then
             echo "Compiling all .c files with \$CC..."
-            for file in $(find pr-code -name '*.c'); do
+            for file in $c_files; do
               $CC -c "$file" -o "build/$(basename "$file").o" || exit 1
             done
           fi
           echo "Compile finished."
+
 
       - name: Create CodeQL database
         working-directory: pr-code
