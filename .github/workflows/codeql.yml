@@ -148,13 +148,22 @@ jobs:
     # ───────── Create database ─────────
     
 
-    - name: Create CodeQL database (source-only mode)
+    - name: Create CodeQL database (compile one file to trigger extraction)
       working-directory: pr-code
       run: |
+        SRC_FILE=$(find . -name "*.cpp" | head -n 1)
+        if [ -z "$SRC_FILE" ]; then
+          echo "No C++ files found. Creating dummy."
+          echo 'int main() { return 0; }' > dummy.cpp
+          SRC_FILE=dummy.cpp
+        fi
+        g++ -c "$SRC_FILE" || echo "Dummy compilation to help extractor"
+
         $CODEQL_CLI database create coding-standards-db \
           --language=c-cpp \
-          --command="echo Build placeholder for C++" \
+          --command="g++ -c $SRC_FILE" \
           --overwrite
+
     # ───────── Analyze ─────────
     - name: Analyze coding-standards packs
       working-directory: pr-code
