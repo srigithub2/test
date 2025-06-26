@@ -19,29 +19,6 @@ jobs:
       contents: read
 
     steps:
-      # ───────── Repository setup ─────────
-      - name: Checkout workflow repo
-        uses: actions/checkout@v4
-        with:
-          path: workflow-repo
-          fetch-depth: 0
-
-      - name: "Cache CodeQL standards repo"
-        id: cache-standards
-        uses: actions/cache@v4
-        with:
-          path: workflow-repo/codeql-coding-standards
-          key: codeql-standards-${{ hashFiles('workflow-repo/codeql-coding-standards/**') }}
-          restore-keys: codeql-standards-
-
-      - name: Checkout CodeQL Coding Standards
-        if: steps.cache-standards.outputs.cache-hit != 'true'
-        uses: actions/checkout@v4
-        with:
-          repository: github/codeql-coding-standards
-          path: workflow-repo/codeql-coding-standards
-          fetch-depth: 1
-
       # ───────── Source checkout ─────────
       - name: "Clone PR source repo"
         if: github.event_name == 'pull_request'
@@ -64,7 +41,7 @@ jobs:
           path: |
             ~/.cache/ccache
             pr-code/**/*.o
-          key: ${{ runner.os }}-build-${{ hashFiles('pr-code/**/*.c', 'pr-code/**/*.cpp', 'pr-code/**/*.h', 'pr-code/**/*.hpp') }}
+          key: ${{ runner.os }}-build-${{ hashFiles('pr-code/**/*.c','pr-code/**/*.cpp','pr-code/**/*.h','pr-code/**/*.hpp') }}
           restore-keys: ${{ runner.os }}-build-
 
       - name: Setup ccache
@@ -93,52 +70,30 @@ jobs:
         with:
           languages: c-cpp
           config-file: pr-code/.github/codeql-config.yml
-
-      - name: Locate CodeQL CLI
-        run: |
-          CODEQL_CLI=$(which codeql || find /opt/hostedtoolcache -type f -name codeql | head -n 1)
-          echo "CODEQL_CLI=$CODEQL_CLI" >> $GITHUB_ENV
-
-      # ───────── Install selected packs ─────────
-      - name: "Install coding-standards packs"
-        run: |
-          for dir in \
-            workflow-repo/codeql-coding-standards/cpp/common/src \
-            workflow-repo/codeql-coding-standards/cpp/cert/src \
-            workflow-repo/codeql-coding-standards/cpp/autosar/src \
-            workflow-repo/codeql-coding-standards/c/misra/src
-          do
-            if [ -f "$dir/qlpack.yml" ]; then
-              echo "🛠  Installing $dir"
-              cd "$dir"
-              $CODEQL_CLI pack install
-              cd -
-            else
-              echo "⚠️  Skipping $dir (no qlpack.yml found)"
-            fi
-          done
+          packs: |
+            github/codeql-coding-standards/cpp/common@latest
+            github/codeql-coding-standards/cpp/cert@latest
+            github/codeql-coding-standards/cpp/autosar@latest
+            github/codeql-coding-standards/c/misra@latest
 
       # ───────── Create CodeQL database (no compilation) ─────────
-      - name: "Create CodeQL database"
+      - name: Create CodeQL database
         working-directory: pr-code
         run: |
-          $CODEQL_CLI database create coding-standards-db \
+          codeql database create coding-standards-db \
             --language=c-cpp \
             --build-mode=none \
             --overwrite
 
-      # ───────── Analyze ─────────
+      # ───────── Analyze (pre-compiled packs, valid inputs only) ─────────
       - name: Analyze coding-standards packs
         uses: github/codeql-action/analyze@v3
         with:
+          checkout_path: pr-code
           category: coding-standards
-          format: sarif-latest
           output: cert-results.sarif
           threads: ${{ runner.processor_count }}
-          queries: |
-            github/codeql-coding-standards/cpp/cert@latest:src
-            github/codeql-coding-standards/cpp/autosar@latest:src
-            github/codeql-coding-standards/c/misra@latest:src
+          upload: false
 
       # ───────── Upload results ─────────
       - name: Upload SARIF to Security Tab
@@ -153,6 +108,6 @@ jobs:
           name: coding-standards-sarif
           path: pr-code/cert-results.sarif
 
-      - name: "Show ccache stats"
+      - name: Show ccache stats
         if: always()
         run: ccache --show-stats || true
