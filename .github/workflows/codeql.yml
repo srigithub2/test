@@ -2,10 +2,10 @@ name: "CodeQL – C & C++ Coding-Standards Only (Optimized)"
 
 on:
   pull_request:
-    branches: [ "main", "master" ]
-    types: [ opened, synchronize, reopened ]
+    branches: ["main", "master"]
+    types: [opened, synchronize, reopened]
   push:
-    branches: [ "main", "master" ]
+    branches: ["main", "master"]
   workflow_dispatch:
 
 jobs:
@@ -19,7 +19,6 @@ jobs:
       contents: read
 
     steps:
-      # ───────── Repository setup ─────────
       - name: Checkout workflow repo
         uses: actions/checkout@v4
         with:
@@ -42,7 +41,6 @@ jobs:
           path: workflow-repo/codeql-coding-standards
           fetch-depth: 1
 
-      # ───────── Source checkout ─────────
       - name: Clone PR source repo
         if: ${{ github.event_name == 'pull_request' }}
         run: |
@@ -57,7 +55,6 @@ jobs:
           mkdir pr-code
           rsync -a --exclude .git ./ pr-code/
 
-      # ───────── Build cache & ccache ─────────
       - name: Cache build objects
         uses: actions/cache@v4
         with:
@@ -82,18 +79,15 @@ jobs:
           ccache --set-config=max_size=1G
           ccache --zero-stats
 
-      # ───────── CodeQL config & init ─────────
       - name: Write CodeQL config
         run: |
           mkdir -p pr-code/.github
-          {
-            echo "paths-ignore:"
-            echo "  - third_party/**"
-            echo "  - generated/**"
-            echo "  - vendor/**"
-            echo "  - build/**"
-            echo "  - '**/test/**'"
-          } > pr-code/.github/codeql-config.yml
+          echo "paths-ignore:" > pr-code/.github/codeql-config.yml
+          echo "  - third_party/**" >> pr-code/.github/codeql-config.yml
+          echo "  - generated/**"    >> pr-code/.github/codeql-config.yml
+          echo "  - vendor/**"       >> pr-code/.github/codeql-config.yml
+          echo "  - build/**"        >> pr-code/.github/codeql-config.yml
+          echo "  - '**/test/**'"    >> pr-code/.github/codeql-config.yml
 
       - name: Init CodeQL
         uses: github/codeql-action/init@v3
@@ -101,7 +95,6 @@ jobs:
           languages: c-cpp
           config-file: pr-code/.github/codeql-config.yml
 
-      # ───────── Install selected packs ─────────
       - name: Install coding-standards packs
         run: |
           for dir in \
@@ -110,16 +103,13 @@ jobs:
             workflow-repo/codeql-coding-standards/cpp/autosar/src \
             workflow-repo/codeql-coding-standards/c/misra/src; do
             if [ -f "$dir/qlpack.yml" ]; then
-              echo "🛠 Installing $dir"
+              echo "Installing $dir"
               cd "$dir"
               codeql pack install
               cd -
-            else
-              echo "⚠️ Skipping $dir (no qlpack.yml)"
             fi
           done
 
-      # ───────── Compile one file & create DB ─────────
       - name: Compile single file to trigger extractor
         id: compile-one
         working-directory: pr-code
@@ -140,7 +130,6 @@ jobs:
             --command="$CXX -c ${{ steps.compile-one.outputs.FILE }} -o trigger.o" \
             --overwrite
 
-      # ───────── Analyze ─────────
       - name: Analyze coding-standards packs
         working-directory: pr-code
         run: |
@@ -153,7 +142,6 @@ jobs:
             --threads=$(sysctl -n hw.ncpu) \
             --sarif-category=coding-standards
 
-      # ───────── Upload results ─────────
       - name: Upload SARIF to Security Tab
         uses: github/codeql-action/upload-sarif@v3
         with:
@@ -168,4 +156,4 @@ jobs:
 
       - name: Show ccache stats
         if: always()
-        run: ccache --show-stats || true
+        run: ccache --show-stats
