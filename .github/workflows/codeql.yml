@@ -3,7 +3,7 @@ name: "CodeQL – C & C++ Coding-Standards Only (Optimized)"
 on:
   pull_request:
     branches: [ "main", "master" ]
-    types: [ opened, synchronize, reopened ]
+    types:  [ opened, synchronize, reopened ]
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
       contents: read
 
     steps:
-      # ───────── 1. Checkout source ─────────
+      # ───────── Checkout your code ─────────
       - name: Checkout source
         uses: actions/checkout@v4
         with:
@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      # ───────── 2. Cache & setup ccache ─────────
+      # ───────── Cache & setup ccache ─────────
       - name: Cache build objects
         uses: actions/cache@v4
         with:
@@ -45,7 +45,7 @@ jobs:
           ccache --set-config=max_size=1G
           ccache --zero-stats
 
-      # ───────── 3. Write CodeQL config ─────────
+      # ───────── Write CodeQL config ─────────
       - name: Write CodeQL config
         run: |
           mkdir -p pr-code/.github
@@ -58,16 +58,16 @@ jobs:
             echo "  - '**/test/**'"
           } > pr-code/.github/codeql-config.yml
 
-      # ───────── 4. Init CodeQL with pre-compiled v2.47.0 pack ─────────
+      # ───────── Init CodeQL (use pre-compiled v2.47.0) ─────────
       - name: Init CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: c-cpp
           config-file: pr-code/.github/codeql-config.yml
-          packs: github/codeql-coding-standards@v2.47.0
-      # This downloads the v2.47.0 pack and its QL bytecode—no source compile needed :contentReference[oaicite:0]{index=0}:contentReference[oaicite:1]{index=1}
+          packs: github/codeql-coding-standards@2.47.0
+      # Note: version **must** be “2.47.0” (no leading “v”) per SemVer :contentReference[oaicite:0]{index=0}
 
-      # ───────── 5. Create DB (skip any C/C++ compile) ─────────
+      # ───────── Create DB (skip C/C++ compile) ─────────
       - name: Create CodeQL database
         working-directory: pr-code
         run: |
@@ -76,7 +76,7 @@ jobs:
             --build-mode=none \
             --overwrite
 
-      # ───────── 6. Analyze (uses the packs from init) ─────────
+      # ───────── Analyze (uses packs from init) ─────────
       - name: Analyze coding-standards packs
         uses: github/codeql-action/analyze@v3
         with:
@@ -86,7 +86,7 @@ jobs:
           threads: ${{ runner.processor_count }}
           upload: false
 
-      # ───────── 7. Upload results ─────────
+      # ───────── Upload results ─────────
       - name: Upload SARIF to Security Tab
         uses: github/codeql-action/upload-sarif@v3
         with:
