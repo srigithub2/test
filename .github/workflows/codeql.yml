@@ -83,12 +83,14 @@ jobs:
         run: |
           mkdir -p pr-code/.github
           cat > pr-code/.github/codeql-config.yml <<EOF
-          paths-ignore:
-          - third_party/**
-          - generated/**
-          - vendor/**
-          - build/**
-          - '**/test/**'
+paths-ignore:
+  - third_party/**
+  - generated/**
+  - vendor/**
+  - build/**
+  - '**/test/**'
+EOF
+
       - name: Init CodeQL
         id: init-codeql
         uses: github/codeql-action/init@v3
@@ -126,7 +128,9 @@ jobs:
       - name: Create CodeQL database
         working-directory: pr-code
         run: |
-          codeql database create coding-standards-db \
+          CODEQL=$(find /Users/runner/hostedtoolcache/CodeQL -type f -name codeql | head -n1)
+          if [ -z "$CODEQL" ]; then echo "CodeQL CLI not found!"; exit 1; fi
+          "$CODEQL" database create coding-standards-db \
             --language=c-cpp \
             --command="$CXX -c ${{ steps.compile-one.outputs.FILE }} -o trigger.o" \
             --overwrite
@@ -134,7 +138,9 @@ jobs:
       - name: Analyze coding-standards packs
         working-directory: pr-code
         run: |
-          codeql database analyze coding-standards-db \
+          CODEQL=$(find /Users/runner/hostedtoolcache/CodeQL -type f -name codeql | head -n1)
+          if [ -z "$CODEQL" ]; then echo "CodeQL CLI not found!"; exit 1; fi
+          "$CODEQL" database analyze coding-standards-db \
             ../workflow-repo/codeql-coding-standards/cpp/cert/src \
             ../workflow-repo/codeql-coding-standards/cpp/autosar/src \
             ../workflow-repo/codeql-coding-standards/c/misra/src \
