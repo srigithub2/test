@@ -3,7 +3,7 @@ name: "CodeQL – C & C++ Coding-Standards Only (Optimized)"
 on:
   pull_request:
     branches: [ "main", "master" ]
-    types:  [ opened, synchronize, reopened ]
+    types: [ opened, synchronize, reopened ]
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       security-events: write
-      actions:  read
+      actions: read
       contents: read
 
     steps:
@@ -35,7 +35,7 @@ jobs:
           restore-keys: codeql-standards-
 
       - name: Checkout CodeQL Coding Standards
-        if: steps.cache-standards.outputs.cache-hit != 'true'
+        if: ${{ steps.cache-standards.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v4
         with:
           repository: github/codeql-coding-standards
@@ -44,7 +44,7 @@ jobs:
 
       # ───────── Source checkout ─────────
       - name: Clone PR source repo
-        if: github.event_name == 'pull_request'
+        if: ${{ github.event_name == 'pull_request' }}
         run: |
           git clone --depth 1 "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
           cd pr-code
@@ -52,7 +52,7 @@ jobs:
           git checkout "${{ github.event.pull_request.head.sha }}"
 
       - name: Fallback: use current repo (push)
-        if: github.event_name != 'pull_request'
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           mkdir pr-code
           rsync -a --exclude .git ./ pr-code/
@@ -72,12 +72,12 @@ jobs:
           if [[ "$(uname)" == "Darwin" ]]; then
             brew update
             brew install ccache
-            echo "CC='ccache clang'"  >> $GITHUB_ENV
-            echo "CXX='ccache clang++'" >> $GITHUB_ENV
+            echo "CC=ccache clang"  >> $GITHUB_ENV
+            echo "CXX=ccache clang++" >> $GITHUB_ENV
           else
             sudo apt-get update -y && sudo apt-get install -y ccache
-            echo "CC='ccache gcc'"  >> $GITHUB_ENV
-            echo "CXX='ccache g++'" >> $GITHUB_ENV
+            echo "CC=ccache gcc"  >> $GITHUB_ENV
+            echo "CXX=ccache g++" >> $GITHUB_ENV
           fi
           ccache --set-config=max_size=1G
           ccache --zero-stats
@@ -108,15 +108,14 @@ jobs:
             workflow-repo/codeql-coding-standards/cpp/common/src \
             workflow-repo/codeql-coding-standards/cpp/cert/src \
             workflow-repo/codeql-coding-standards/cpp/autosar/src \
-            workflow-repo/codeql-coding-standards/c/misra/src
-          do
+            workflow-repo/codeql-coding-standards/c/misra/src; do
             if [ -f "$dir/qlpack.yml" ]; then
-              echo "🛠  Installing $dir"
+              echo "🛠 Installing $dir"
               cd "$dir"
               codeql pack install
               cd -
             else
-              echo "⚠️  Skipping $dir (no qlpack.yml found)"
+              echo "⚠️ Skipping $dir (no qlpack.yml)"
             fi
           done
 
