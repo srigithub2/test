@@ -95,8 +95,13 @@ jobs:
         config-file: pr-code/.github/codeql-config.yml
 
     - name: Locate CodeQL CLI
+      id: locate-cli
       run: |
-        echo "CODEQL_CLI=$(which codeql)" >> "$GITHUB_ENV"
+        echo "🔍 Locating CodeQL CLI..."
+        CODEQL_CLI=$(which codeql || find /opt/hostedtoolcache -type f -name codeql | head -n 1)
+        echo "CODEQL_CLI=$CODEQL_CLI" >> "$GITHUB_ENV"
+        echo "✅ Found CodeQL CLI at $CODEQL_CLI"
+
 
     # ───────── Install packs locally ─────────
     - name: Install coding-standards packs
