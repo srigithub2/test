@@ -82,12 +82,14 @@ jobs:
       - name: Write CodeQL config
         run: |
           mkdir -p pr-code/.github
-          echo "paths-ignore:" > pr-code/.github/codeql-config.yml
-          echo "  - third_party/**" >> pr-code/.github/codeql-config.yml
-          echo "  - generated/**"    >> pr-code/.github/codeql-config.yml
-          echo "  - vendor/**"       >> pr-code/.github/codeql-config.yml
-          echo "  - build/**"        >> pr-code/.github/codeql-config.yml
-          echo "  - '**/test/**'"    >> pr-code/.github/codeql-config.yml
+          cat > pr-code/.github/codeql-config.yml <<EOF
+paths-ignore:
+  - third_party/**
+  - generated/**
+  - vendor/**
+  - build/**
+  - '**/test/**'
+EOF
 
       - name: Init CodeQL
         uses: github/codeql-action/init@v3
