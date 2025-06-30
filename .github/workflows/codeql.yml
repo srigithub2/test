@@ -1,197 +1,340 @@
+ 
 name: "CodeQL – C & C++ Coding-Standards Only (Optimized)"
-
+ 
 on:
+
   pull_request:
+
     branches: ["main", "master"]
+
     types: [opened, synchronize, reopened]
+
   push:
+
     branches: ["main", "master"]
+
   workflow_dispatch:
-
+ 
 jobs:
+
   coding-standards:
+
     name: "Coding-Standards (CERT, AUTOSAR, MISRA)"
-    runs-on: macos-latest
+
+    runs-on: ubuntu-latest
+
     timeout-minutes: 60
+
     permissions:
+
       security-events: write
+
       actions: read
+
       contents: read
-
+ 
     steps:
+
       - name: Checkout workflow repo
+
         uses: actions/checkout@v4
+
         with:
+
           path: workflow-repo
+
           fetch-depth: 0
-
+ 
       - name: Cache CodeQL standards repo
+
         id: cache-standards
+
         uses: actions/cache@v4
+
         with:
+
           path: workflow-repo/codeql-coding-standards
+
           key: codeql-standards-${{ hashFiles('workflow-repo/codeql-coding-standards/**') }}
+
           restore-keys: codeql-standards-
-
+ 
       - name: Checkout CodeQL Coding Standards
+
         if: ${{ steps.cache-standards.outputs.cache-hit != 'true' }}
+
         uses: actions/checkout@v4
+
         with:
+
           repository: github/codeql-coding-standards
+
           path: workflow-repo/codeql-coding-standards
+
           fetch-depth: 1
-
+ 
       - name: Clone PR source repo
+
         if: ${{ github.event_name == 'pull_request' }}
+
         run: |
+
           git clone --depth 1 "${{ github.event.pull_request.head.repo.clone_url }}" pr-code
+
           cd pr-code
+
           git fetch origin "${{ github.event.pull_request.head.sha }}"
+
           git checkout "${{ github.event.pull_request.head.sha }}"
-
+ 
       - name: "Fallback: use current repo (push)"
+
         if: ${{ github.event_name != 'pull_request' }}
+
         run: |
+
           mkdir pr-code
+
           rsync -a --exclude .git ./ pr-code/
-
+ 
       - name: Cache build objects
+
         uses: actions/cache@v4
+
         with:
+
           path: |
+
             ~/.cache/ccache
+
             pr-code/**/*.o
+
           key: ${{ runner.os }}-build-${{ hashFiles('pr-code/**/*.c','pr-code/**/*.cpp','pr-code/**/*.h','pr-code/**/*.hpp') }}
+
           restore-keys: ${{ runner.os }}-build-
-
+ 
       - name: Setup ccache
-        run: |
-          if [[ "$(uname)" == "Darwin" ]]; then
-            brew update
-            brew install ccache
-            echo "CC=ccache clang"  >> $GITHUB_ENV
-            echo "CXX=ccache clang++" >> $GITHUB_ENV
-          else
-            sudo apt-get update -y && sudo apt-get install -y ccache
-            echo "CC=ccache gcc"  >> $GITHUB_ENV
-            echo "CXX=ccache g++" >> $GITHUB_ENV
-          fi
-          ccache --set-config=max_size=1G
-          ccache --zero-stats
 
-      - name: Write CodeQL config
         run: |
+
+          sudo apt-get update -y && sudo apt-get install -y ccache
+
+          echo "CC=ccache gcc"  >> $GITHUB_ENV
+
+          echo "CXX=ccache g++" >> $GITHUB_ENV
+
+          ccache --set-config=max_size=1G
+
+          ccache --zero-stats
+ 
+      - name: Write CodeQL config
+
+        run: |
+
           mkdir -p pr-code/.github
+
           cat > pr-code/.github/codeql-config.yml <<EOF
+
           paths-ignore:
+
           - third_party/**
+
           - generated/**
+
           - vendor/**
+
           - build/**
+
           - '**/test/**'
 
-      - name: Init CodeQL
-        id: init-codeql
-        uses: github/codeql-action/init@v3
-        with:
-          languages: c-cpp
-          config-file: pr-code/.github/codeql-config.yml
-
-      - name: Install coding-standards packs
-        run: |
-          CODEQL=$(find /Users/runner/hostedtoolcache/CodeQL -type f -name codeql | head -n1)
-          if [ -z "$CODEQL" ]; then echo "CodeQL CLI not found!"; exit 1; fi
-          for dir in \
-            workflow-repo/codeql-coding-standards/cpp/common/src \
-            workflow-repo/codeql-coding-standards/cpp/cert/src \
-            workflow-repo/codeql-coding-standards/cpp/autosar/src \
-            workflow-repo/codeql-coding-standards/c/misra/src; do
-            if [ -f "$dir/qlpack.yml" ]; then
-              echo "Installing $dir"
-              "$CODEQL" pack install "$dir"
-            fi
-          done
-
-      - name: Compile all C/C++ source files
-        id: compile-all
-        run: |
-          mkdir -p build
-          cpp_files=$(find pr-code -name '*.cpp' ! -path '*/codeql-coding-standards/*' ! -path '*/workflow-repo/*')
-          c_files=$(find pr-code -name '*.c' ! -path '*/codeql-coding-standards/*' ! -path '*/workflow-repo/*')
-          cpp_count=$(echo "$cpp_files" | wc -w | xargs)
-          c_count=$(echo "$c_files" | wc -w | xargs)
-          if [ "$cpp_count" -gt 0 ]; then
-            echo "Compiling all .cpp files with \$CXX..."
-            for file in $cpp_files; do
-              $CXX -c "$file" -o "build/$(basename "$file").o" || exit 1
-            done
-          fi
-          if [ "$c_count" -gt 0 ]; then
-            echo "Compiling all .c files with \$CC..."
-            for file in $c_files; do
-              $CC -c "$file" -o "build/$(basename "$file").o" || exit 1
-            done
-          fi
-          echo "Compile finished."
-
-      - name: Write build script for CodeQL
-        working-directory: pr-code
-        run: |
-          cat > build-all.sh <<'EOF'
-          #!/bin/bash
-          set -e
-          mkdir -p build
-          cpp_files=$(find . -name "*.cpp" ! -path "*/codeql-coding-standards/*" ! -path "*/workflow-repo/*")
-          c_files=$(find . -name "*.c" ! -path "*/codeql-coding-standards/*" ! -path "*/workflow-repo/*")
-          for file in $cpp_files; do
-            $CXX -c "$file" -o "build/$(basename "$file").o"
-          done
-          for file in $c_files; do
-            $CC -c "$file" -o "build/$(basename "$file").o"
-          done
           EOF
+ 
+      - name: Init CodeQL
+
+        id: init-codeql
+
+        uses: github/codeql-action/init@v3
+
+        with:
+
+          languages: c-cpp
+
+          config-file: pr-code/.github/codeql-config.yml
+ 
+      - name: Install coding-standards packs
+
+        run: |
+
+          CODEQL=$(find /opt/hostedtoolcache/CodeQL -type f -name codeql | head -n1)
+
+          if [ -z "$CODEQL" ]; then echo "CodeQL CLI not found!"; exit 1; fi
+
+          for dir in \
+
+            workflow-repo/codeql-coding-standards/cpp/common/src \
+
+            workflow-repo/codeql-coding-standards/cpp/cert/src \
+
+            workflow-repo/codeql-coding-standards/cpp/autosar/src \
+
+            workflow-repo/codeql-coding-standards/c/misra/src; do
+
+            if [ -f "$dir/qlpack.yml" ]; then
+
+              echo "Installing $dir"
+
+              "$CODEQL" pack install "$dir"
+
+            fi
+
+          done
+ 
+      - name: Compile all C/C++ source files
+
+        id: compile-all
+
+        run: |
+
+          mkdir -p build
+
+          cpp_files=$(find pr-code -name '*.cpp' ! -path '*/codeql-coding-standards/*' ! -path '*/workflow-repo/*')
+
+          c_files=$(find pr-code -name '*.c' ! -path '*/codeql-coding-standards/*' ! -path '*/workflow-repo/*')
+
+          cpp_count=$(echo "$cpp_files" | wc -w | xargs)
+
+          c_count=$(echo "$c_files" | wc -w | xargs)
+
+          if [ "$cpp_count" -gt 0 ]; then
+
+            echo "Compiling all .cpp files with \$CXX..."
+
+            for file in $cpp_files; do
+
+              $CXX -c "$file" -o "build/$(basename "$file").o" || exit 1
+
+            done
+
+          fi
+
+          if [ "$c_count" -gt 0 ]; then
+
+            echo "Compiling all .c files with \$CC..."
+
+            for file in $c_files; do
+
+              $CC -c "$file" -o "build/$(basename "$file").o" || exit 1
+
+            done
+
+          fi
+
+          echo "Compile finished."
+ 
+      - name: Write build script for CodeQL
+
+        working-directory: pr-code
+
+        run: |
+
+          cat > build-all.sh <<'EOF'
+
+          #!/bin/bash
+
+          set -e
+
+          mkdir -p build
+
+          cpp_files=$(find . -name "*.cpp" ! -path "*/codeql-coding-standards/*" ! -path "*/workflow-repo/*")
+
+          c_files=$(find . -name "*.c" ! -path "*/codeql-coding-standards/*" ! -path "*/workflow-repo/*")
+
+          for file in $cpp_files; do
+
+            $CXX -c "$file" -o "build/$(basename "$file").o"
+
+          done
+
+          for file in $c_files; do
+
+            $CC -c "$file" -o "build/$(basename "$file").o"
+
+          done
+
+          EOF
+
           chmod +x build-all.sh
-
-
+ 
       - name: Create CodeQL database
+
         working-directory: pr-code
+
         run: |
-          CODEQL=$(find /Users/runner/hostedtoolcache/CodeQL -type f -name codeql | head -n1)
+
+          CODEQL=$(find /opt/hostedtoolcache/CodeQL -type f -name codeql | head -n1)
+
           if [ -z "$CODEQL" ]; then echo "CodeQL CLI not found!"; exit 1; fi
+
           "$CODEQL" database create coding-standards-db \
+
             --language=c-cpp \
+
             --command="./build-all.sh" \
+
             --overwrite
-
-
-
-
+ 
       - name: Analyze coding-standards packs
+
         working-directory: pr-code
+
         run: |
-          CODEQL=$(find /Users/runner/hostedtoolcache/CodeQL -type f -name codeql | head -n1)
+
+          CODEQL=$(find /opt/hostedtoolcache/CodeQL -type f -name codeql | head -n1)
+
           if [ -z "$CODEQL" ]; then echo "CodeQL CLI not found!"; exit 1; fi
+
+          THREADS=$(nproc)
+
           "$CODEQL" database analyze coding-standards-db \
+
             ../workflow-repo/codeql-coding-standards/cpp/cert/src \
+
             ../workflow-repo/codeql-coding-standards/cpp/autosar/src \
+
             ../workflow-repo/codeql-coding-standards/c/misra/src \
+
             --format=sarif-latest \
+
             --output=cert-results.sarif \
-            --threads=$(sysctl -n hw.ncpu) \
+
+            --threads=$THREADS \
+
             --sarif-category=coding-standards
-
+ 
       - name: Upload SARIF to Security Tab
+
         uses: github/codeql-action/upload-sarif@v3
+
         with:
+
           sarif_file: pr-code/cert-results.sarif
+
           category: coding-standards
-
+ 
       - name: Upload SARIF artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coding-standards-sarif
-          path: pr-code/cert-results.sarif
 
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: coding-standards-sarif
+
+          path: pr-code/cert-results.sarif
+ 
       - name: Show ccache stats
+
         if: always()
+
         run: ccache --show-stats
+
+ 
